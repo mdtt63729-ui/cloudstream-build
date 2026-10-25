@@ -1,6 +1,7 @@
 name: Build CloudStream APK
 
-# Builds upstream CloudStream (recloudstream/cloudstream) and signs the stable release APK.
+# Builds upstream CloudStream (recloudstream/cloudstream), replaces the launcher icon with the
+# artwork in assets/icons, and signs the stable release APK.
 # The signing keystore is reused from repository secrets so rebuilds keep the same signature.
 
 on:
@@ -22,6 +23,26 @@ jobs:
           repository: recloudstream/cloudstream
           ref: master
           fetch-depth: 1
+
+      - name: Checkout icon assets
+        uses: actions/checkout@v4
+        with:
+          path: overlay
+
+      - name: Apply app icon
+        run: |
+          set -euo pipefail
+          R=app/src/main/res
+          for dens in mdpi hdpi xhdpi xxhdpi xxxhdpi; do
+            cp "overlay/assets/icons/ic_launcher-$dens.png" "$R/mipmap-$dens/ic_launcher.png"
+            cp "overlay/assets/icons/ic_launcher_round-$dens.png" "$R/mipmap-$dens/ic_launcher_round.png"
+            cp "overlay/assets/icons/ic_launcher_foreground-$dens.png" "$R/mipmap-$dens/ic_launcher_foreground.png"
+          done
+          cp overlay/assets/icons/ic_launcher-playstore.png app/src/main/ic_launcher-playstore.png
+          cp overlay/assets/icons/ic_launcher.xml "$R/mipmap-anydpi-v26/ic_launcher.xml"
+          cp overlay/assets/icons/ic_launcher_round.xml "$R/mipmap-anydpi-v26/ic_launcher_round.xml"
+          cp overlay/assets/icons/cineflow_icon.xml "$R/values/cineflow_icon.xml"
+          echo "Launcher icon replaced with the supplied artwork."
 
       - name: Set up JDK 21
         uses: actions/setup-java@v4
