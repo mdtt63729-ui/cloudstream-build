@@ -1,7 +1,7 @@
 name: Build CloudStream APK
 
-# Builds the upstream CloudStream app (recloudstream/cloudstream) and signs the release APK.
-# Nothing is vendored here: the workflow checks out upstream at build time.
+# Builds upstream CloudStream (recloudstream/cloudstream) and signs the stable release APK.
+# The signing keystore is reused from repository secrets so rebuilds keep the same signature.
 
 on:
   workflow_dispatch:
@@ -41,11 +41,6 @@ jobs:
             || sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0" \
             || echo "SDK 37 not preinstalled; Gradle will try to download it"
 
-      - name: Show toolchain
-        run: |
-          java -version
-          ./gradlew --version || true
-
       - name: Build stable release APK
         run: ./gradlew :app:assembleStableRelease --no-daemon --stacktrace
 
@@ -57,24 +52,38 @@ jobs:
           if [ -z "$APK" ]; then echo "::error::No APK produced"; exit 1; fi
           cp "$APK" "$RUNNER_TEMP/cloudstream-unsigned.apk"
 
-      - name: Generate keystore and sign
+      - name: Sign APK
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SECRET_STORE_PASS: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SECRET_KEY_PASS: ${{ secrets.SIGNING_KEY_PASSWORD }}
         run: |
           set -euo pipefail
           KS="$RUNNER_TEMP/cloudstream.keystore"
-          STORE_PASS="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 24)"
-          ALIAS="cloudstream"
-          keytool -genkeypair -v -keystore "$KS" -alias "$ALIAS" \
-            -keyalg RSA -keysize 2048 -validity 10000 \
-            -storepass "$STORE_PASS" -keypass "$STORE_PASS" \
-            -dname "CN=CloudStream, OU=Mobile, O=CineFlow, C=IN"
+          if [ -n "${KEYSTORE_B64:-}" ]; then
+            echo "Using the stored keystore."
+            echo "$KEYSTORE_B64" | base64 -d > "$KS"
+            STORE_PASS="$SECRET_STORE_PASS"
+            KEY_ALIAS="$SECRET_KEY_ALIAS"
+            KEY_PASS="$SECRET_KEY_PASS"
+          else
+            echo "No stored keystore; generating a new one."
+            STORE_PASS="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 24)"
+            KEY_ALIAS="cloudstream"
+            KEY_PASS="$STORE_PASS"
+            keytool -genkeypair -v -keystore "$KS" -alias "$KEY_ALIAS" \
+              -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass "$STORE_PASS" -keypass "$KEY_PASS" \
+              -dname "CN=CloudStream, OU=Mobile, O=CineFlow, C=IN"
+          fi
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
-          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$STORE_PASS" \
+          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$KEY_PASS" \
             --out "$RUNNER_TEMP/CloudStream-stable-release-signed.apk" \
             "$RUNNER_TEMP/cloudstream-unsigned.apk"
           "$BT/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/CloudStream-stable-release-signed.apk"
-          base64 -w0 "$KS" > "$RUNNER_TEMP/keystore.base64"
           printf "SIGNING_KEYSTORE_BASE64=%s\nSIGNING_STORE_PASSWORD=%s\nSIGNING_KEY_ALIAS=%s\nSIGNING_KEY_PASSWORD=%s\n" \
-            "$(cat "$RUNNER_TEMP/keystore.base64")" "$STORE_PASS" "$ALIAS" "$STORE_PASS" > "$RUNNER_TEMP/signing-secrets.env"
+            "$(base64 -w0 "$KS")" "$STORE_PASS" "$KEY_ALIAS" "$KEY_PASS" > "$RUNNER_TEMP/signing-secrets.env"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
