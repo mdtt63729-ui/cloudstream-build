@@ -1,0 +1,87 @@
+name: Build CloudStream APK
+
+# Builds the upstream CloudStream app (recloudstream/cloudstream) and signs the release APK.
+# Nothing is vendored here: the workflow checks out upstream at build time.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ "main" ]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and sign CloudStream
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CloudStream
+        uses: actions/checkout@v4
+        with:
+          repository: recloudstream/cloudstream
+          ref: master
+          fetch-depth: 1
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" \
+            || sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0" \
+            || echo "SDK 37 not preinstalled; Gradle will try to download it"
+
+      - name: Show toolchain
+        run: |
+          java -version
+          ./gradlew --version || true
+
+      - name: Build stable release APK
+        run: ./gradlew :app:assembleStableRelease --no-daemon --stacktrace
+
+      - name: Collect APK
+        run: |
+          set -euo pipefail
+          find app/build/outputs -name '*.apk' -print
+          APK="$(find app/build/outputs -name '*.apk' | head -n 1)"
+          if [ -z "$APK" ]; then echo "::error::No APK produced"; exit 1; fi
+          cp "$APK" "$RUNNER_TEMP/cloudstream-unsigned.apk"
+
+      - name: Generate keystore and sign
+        run: |
+          set -euo pipefail
+          KS="$RUNNER_TEMP/cloudstream.keystore"
+          STORE_PASS="$(openssl rand -base64 48 | tr -dc 'A-Za-z0-9' | head -c 24)"
+          ALIAS="cloudstream"
+          keytool -genkeypair -v -keystore "$KS" -alias "$ALIAS" \
+            -keyalg RSA -keysize 2048 -validity 10000 \
+            -storepass "$STORE_PASS" -keypass "$STORE_PASS" \
+            -dname "CN=CloudStream, OU=Mobile, O=CineFlow, C=IN"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$STORE_PASS" --key-pass "pass:$STORE_PASS" \
+            --out "$RUNNER_TEMP/CloudStream-stable-release-signed.apk" \
+            "$RUNNER_TEMP/cloudstream-unsigned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/CloudStream-stable-release-signed.apk"
+          base64 -w0 "$KS" > "$RUNNER_TEMP/keystore.base64"
+          printf "SIGNING_KEYSTORE_BASE64=%s\nSIGNING_STORE_PASSWORD=%s\nSIGNING_KEY_ALIAS=%s\nSIGNING_KEY_PASSWORD=%s\n" \
+            "$(cat "$RUNNER_TEMP/keystore.base64")" "$STORE_PASS" "$ALIAS" "$STORE_PASS" > "$RUNNER_TEMP/signing-secrets.env"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: CloudStream-signed
+          path: |
+            ${{ runner.temp }}/CloudStream-stable-release-signed.apk
+            ${{ runner.temp }}/signing-secrets.env
+          if-no-files-found: error
+          retention-days: 14
