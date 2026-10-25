@@ -45,3 +45,20 @@ is signed with the same key and installs as an update over the previous one.
 If you redistribute the APK, keep this licence with it and offer the source above. CloudStream is
 third-party software. The extensions a user installs are separate third-party works and carry
 their own terms; this repository does not bundle or distribute any extension.
+
+## Local modifications (GPL-3.0 corresponding source)
+
+The build applies these local modifications to upstream `master`. They are reproduced
+deterministically by [`assets/patch_ui.py`](assets/patch_ui.py) together with the artwork in
+[`assets/icons/`](assets/icons), which are part of this repository:
+
+1. **Launcher icon** replaced with the artwork in `assets/icons/` — adaptive foreground/background,
+   legacy and round mipmaps, and the 512 px Play Store icon.
+2. **Bottom navigation** reduced to **Home** and **Library** only.
+3. **Settings button** added to the Home top bar, immediately left of the account button, wired to
+   the existing `navigation_settings` destination.
+4. The bottom-navigation check-state updates in `MainActivity.kt` are made null-safe, because the
+   downloads and settings entries no longer exist in the menu.
+
+Upstream `master` plus the files in this repository are therefore the complete corresponding
+source for the APKs published here.
