@@ -11,14 +11,28 @@ Modifications (all deterministic, applied to upstream `master`):
 Run from the repository root of a CloudStream checkout.
 """
 import pathlib
+import re
 import sys
 
 ROOT = pathlib.Path(".")
 
+STRINGS = ROOT / "app/src/main/res/values/strings.xml"
 MENU = ROOT / "app/src/main/res/menu/bottom_nav_menu.xml"
 HEAD = ROOT / "app/src/main/res/layout/fragment_home_head.xml"
 HOME_FRAGMENT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/home/HomeFragment.kt"
 MAIN_ACTIVITY = ROOT / "app/src/main/java/com/lagradost/cloudstream3/MainActivity.kt"
+
+# ---------------------------------------------------------------- 0. app name
+strings = STRINGS.read_text(encoding="utf-8")
+new_strings, replaced = re.subn(
+    r'<string name="app_name">[^<]*</string>',
+    '<string name="app_name">Prime Box</string>',
+    strings,
+)
+if replaced != 1:
+    sys.exit("[ui] app_name string not found in values/strings.xml")
+STRINGS.write_text(new_strings, encoding="utf-8")
+print("[ui] app name -> Prime Box")
 
 # ---------------------------------------------------------------- 1. bottom nav
 MENU.write_text(
