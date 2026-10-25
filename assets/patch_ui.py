@@ -286,3 +286,271 @@ MAIN_ACTIVITY.write_text(activity, encoding="utf-8")
 print("[ui] MainActivity.kt -> bottom-nav check updates are null-safe")
 
 print("[ui] customisation complete")
+
+# ---------------------------------------------------------------- 6. Recent / History
+LIST_LAYOUT = ROOT / "app/src/main/res/layout/fragment_library_list.xml"
+ROW_LAYOUT = ROOT / "app/src/main/res/layout/item_library_row.xml"
+LIST_FRAGMENT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/library/LibraryListFragment.kt"
+
+LIST_LAYOUT.write_text(
+    """<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#141010">
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:clipToPadding="false"
+        android:padding="12dp" />
+
+    <TextView
+        android:id="@+id/empty"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:text="Nothing here yet"
+        android:textColor="#93A1AE"
+        android:textSize="14sp"
+        android:visibility="gone" />
+</FrameLayout>
+""",
+    encoding="utf-8",
+)
+
+ROW_LAYOUT.write_text(
+    """<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="@drawable/pb_card_bg"
+    android:clickable="true"
+    android:focusable="true"
+    android:foreground="?attr/selectableItemBackground"
+    android:orientation="horizontal"
+    android:padding="12dp"
+    android:layout_marginBottom="10dp">
+
+    <ImageView
+        android:id="@+id/poster"
+        android:layout_width="56dp"
+        android:layout_height="82dp"
+        android:background="@drawable/pb_card_tile_bg"
+        android:contentDescription="@null"
+        android:scaleType="centerCrop" />
+
+    <LinearLayout
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_vertical"
+        android:layout_marginStart="14dp"
+        android:layout_weight="1"
+        android:orientation="vertical">
+
+        <TextView
+            android:id="@+id/title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:ellipsize="end"
+            android:maxLines="2"
+            android:textColor="#F5EAE6"
+            android:textSize="15sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:ellipsize="end"
+            android:maxLines="1"
+            android:textColor="#93A1AE"
+            android:textSize="12sp" />
+    </LinearLayout>
+</LinearLayout>
+""",
+    encoding="utf-8",
+)
+
+LIST_FRAGMENT.write_text(
+    """package com.lagradost.cloudstream3.ui.library
+
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.ImageView
+import android.widget.TextView
+import androidx.fragment.app.Fragment
+import androidx.lifecycle.lifecycleScope
+import androidx.navigation.fragment.NavHostFragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.lagradost.cloudstream3.R
+import com.lagradost.cloudstream3.ui.home.HomeViewModel
+import com.lagradost.cloudstream3.utils.DOWNLOAD_HEADER_CACHE
+import com.lagradost.cloudstream3.utils.DataStoreHelper
+import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
+import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
+import kotlinx.coroutines.launch
+
+/**
+ * Prime Box list screen. mode=recent shows continue-watching entries (most recent first),
+ * mode=history shows every title with a stored watch state.
+ */
+class LibraryListFragment : Fragment() {
+
+    private data class Row(
+        val name: String,
+        val url: String,
+        val apiName: String,
+        val poster: String?,
+        val subtitle: String
+    )
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.fragment_library_list, container, false)
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val mode = arguments?.getString("mode") ?: "recent"
+        val list = view.findViewById<RecyclerView>(R.id.list)
+        val empty = view.findViewById<TextView>(R.id.empty)
+        list.layoutManager = LinearLayoutManager(requireContext())
+        val adapter = Adapter { row -> open(row) }
+        list.adapter = adapter
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            val rows = runCatching {
+                if (mode == "history") loadHistory() else loadRecent()
+            }.getOrDefault(emptyList())
+            adapter.submit(rows)
+            empty.visibility = if (rows.isEmpty()) View.VISIBLE else View.GONE
+        }
+    }
+
+    private suspend fun loadRecent(): List<Row> =
+        HomeViewModel.getResumeWatching().orEmpty().map { item ->
+            val episode = when {
+                item.season != null && item.episode != null -> "S" + item.season + "E" + item.episode
+                item.episode != null -> "Episode " + item.episode
+                else -> ""
+            }
+            Row(
+                item.name,
+                item.url,
+                item.apiName,
+                item.posterUrl,
+                listOf(episode, item.apiName).filter { it.isNotBlank() }.joinToString("  •  ")
+            )
+        }
+
+    private suspend fun loadHistory(): List<Row> {
+        val ids = runCatching { DataStoreHelper.getAllWatchStateIds() }.getOrNull().orEmpty()
+        return ids.mapNotNull { id ->
+            val cached: DownloadObjects.DownloadHeaderCached? = runCatching {
+                requireContext().getKey(DOWNLOAD_HEADER_CACHE, id.toString())
+            }.getOrNull()
+            cached?.let { Row(it.name, it.url, it.apiName, it.poster, it.apiName) }
+        }
+    }
+
+    private fun open(row: Row) {
+        runCatching {
+            NavHostFragment.findNavController(this).navigate(
+                R.id.global_to_navigation_results_phone,
+                Bundle().apply {
+                    putString("url", row.url)
+                    putString("apiName", row.apiName)
+                    putString("name", row.name)
+                }
+            )
+        }
+    }
+
+    private class Adapter(private val onClick: (Row) -> Unit) : RecyclerView.Adapter<Adapter.Holder>() {
+        private val items = mutableListOf<Row>()
+
+        fun submit(list: List<Row>) {
+            items.clear()
+            items.addAll(list)
+            notifyDataSetChanged()
+        }
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
+            Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_library_row, parent, false))
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            val row = items[position]
+            holder.title.text = row.name
+            holder.subtitle.text = row.subtitle
+            runCatching { holder.poster.loadImage(row.poster) }
+            holder.itemView.setOnClickListener { onClick(row) }
+        }
+
+        class Holder(view: View) : RecyclerView.ViewHolder(view) {
+            val poster: ImageView = view.findViewById(R.id.poster)
+            val title: TextView = view.findViewById(R.id.title)
+            val subtitle: TextView = view.findViewById(R.id.subtitle)
+        }
+    }
+}
+""",
+    encoding="utf-8",
+)
+print("[ui] Recent/History list screen written")
+
+graph = NAVGRAPH.read_text(encoding="utf-8")
+if "@+id/navigation_recent" not in graph:
+    entries = """
+    <fragment
+        android:id="@+id/navigation_recent"
+        android:name="com.lagradost.cloudstream3.ui.library.LibraryListFragment">
+        <argument
+            android:name="mode"
+            android:defaultValue="recent"
+            app:argType="string" />
+    </fragment>
+
+    <fragment
+        android:id="@+id/navigation_history"
+        android:name="com.lagradost.cloudstream3.ui.library.LibraryListFragment">
+        <argument
+            android:name="mode"
+            android:defaultValue="history"
+            app:argType="string" />
+    </fragment>
+</navigation>
+"""
+    graph = graph.rstrip()
+    if not graph.endswith("</navigation>"):
+        sys.exit("[ui] navigation graph has no closing tag")
+    graph = graph[: -len("</navigation>")] + entries
+    NAVGRAPH.write_text(graph, encoding="utf-8")
+    print("[ui] mobile_navigation.xml -> navigation_recent + navigation_history added")
+
+lib_frag = LIB_FRAGMENT.read_text(encoding="utf-8")
+if "navigation_recent" not in lib_frag:
+    lib_frag = lib_frag.replace(
+        'view.findViewById<View>(R.id.card_recent)?.setOnClickListener { toast("Recent: next step") }',
+        'view.findViewById<View>(R.id.card_recent)?.setOnClickListener {\n'
+        '            runCatching { nav.navigate(R.id.navigation_recent) }.onFailure { toast("Recent could not be opened") }\n'
+        '        }',
+        1,
+    )
+    lib_frag = lib_frag.replace(
+        'view.findViewById<View>(R.id.card_history)?.setOnClickListener { toast("History: next step") }',
+        'view.findViewById<View>(R.id.card_history)?.setOnClickListener {\n'
+        '            runCatching { nav.navigate(R.id.navigation_history) }.onFailure { toast("History could not be opened") }\n'
+        '        }',
+        1,
+    )
+    LIB_FRAGMENT.write_text(lib_frag, encoding="utf-8")
+    print("[ui] LibraryHomeFragment.kt -> Recent + History cards wired")
