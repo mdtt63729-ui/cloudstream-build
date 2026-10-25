@@ -392,7 +392,7 @@ import com.lagradost.cloudstream3.R
 import com.lagradost.cloudstream3.ui.home.HomeViewModel
 import com.lagradost.cloudstream3.utils.DOWNLOAD_HEADER_CACHE
 import com.lagradost.cloudstream3.utils.DataStoreHelper
-import com.lagradost.cloudstream3.utils.DataStoreHelper.getKey
+import com.lagradost.cloudstream3.utils.DataStore.getKey
 import com.lagradost.cloudstream3.utils.ImageLoader.loadImage
 import com.lagradost.cloudstream3.utils.downloader.DownloadObjects
 import kotlinx.coroutines.launch
