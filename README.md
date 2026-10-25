@@ -54,13 +54,17 @@ deterministically by [`assets/patch_ui.py`](assets/patch_ui.py) together with th
 
 1. **Launcher icon** replaced with the artwork in `assets/icons/` — adaptive foreground/background,
    legacy and round mipmaps, and the 512 px Play Store icon.
-2. **App name** changed to **Prime Box** (`app_name` in `values/strings.xml`).
-2b. **Bottom navigation** reduced to **Home** and **Library**, and the Library tab now opens a new
-   card home (`LibraryHomeFragment` + `fragment_library_home.xml`) with Download / Recent / History
-   / Offline cards, styled like the supplied reference.
-3. **Settings button** added to the Home top bar, immediately left of the account button, wired to
+2. **App name** changed to **Prime Box** (`app_name` in `values/strings.xml`), and the **bottom
+   navigation** is reduced to **Home** and **Library**.
+3. **Library card home** (`LibraryHomeFragment` + `fragment_library_home.xml`) with Download,
+   Recent, History and Offline cards.
+4. **Recent** and **History** screens (`LibraryListFragment`) built from CloudStream's own
+   continue-watching and watch-state stores.
+5. **Offline** (`OfflineFragment` + `OfflinePlayerFragment`): pick a folder with the system
+   document picker and play the videos in it with the bundled Media3 player.
+6. **Settings button** added to the Home top bar, immediately left of the account button, wired to
    the existing `navigation_settings` destination.
-4. The bottom-navigation check-state updates in `MainActivity.kt` are made null-safe, so the bar
+7. The bottom-navigation check-state updates in `MainActivity.kt` are made null-safe, so the bar
    keeps working even if an entry is missing from the menu.
 
 

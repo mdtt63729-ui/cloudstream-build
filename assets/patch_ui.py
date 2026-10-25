@@ -561,3 +561,343 @@ if "navigation_recent" not in lib_frag:
     )
     LIB_FRAGMENT.write_text(lib_frag, encoding="utf-8")
     print("[ui] LibraryHomeFragment.kt -> Recent + History cards wired")
+
+# ---------------------------------------------------------------- 7. Offline (local videos)
+OFF_LAYOUT = ROOT / "app/src/main/res/layout/fragment_offline.xml"
+OFF_PLAYER_LAYOUT = ROOT / "app/src/main/res/layout/fragment_offline_player.xml"
+OFF_FRAGMENT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/library/OfflineFragment.kt"
+OFF_PLAYER = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/library/OfflinePlayerFragment.kt"
+
+OFF_LAYOUT.write_text(
+    """<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#141010"
+    android:orientation="vertical"
+    android:padding="14dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Offline"
+        android:textColor="#F5EAE6"
+        android:textSize="24sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/offline_hint"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:text="Pick a folder on this phone and its videos will play here."
+        android:textColor="#93A1AE"
+        android:textSize="13sp" />
+
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/offline_pick"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="10dp"
+        android:text="Choose folder" />
+
+    <androidx.recyclerview.widget.RecyclerView
+        android:id="@+id/list"
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_marginTop="12dp"
+        android:layout_weight="1"
+        android:clipToPadding="false" />
+</LinearLayout>
+""",
+    encoding="utf-8",
+)
+
+OFF_PLAYER_LAYOUT.write_text(
+    """<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#000000">
+
+    <androidx.media3.ui.PlayerView
+        android:id="@+id/player_view"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:keepScreenOn="true" />
+</FrameLayout>
+""",
+    encoding="utf-8",
+)
+
+OFF_FRAGMENT.write_text(
+    """package com.lagradost.cloudstream3.ui.library
+
+import android.content.ContentResolver
+import android.content.Context
+import android.content.Intent
+import android.net.Uri
+import android.os.Bundle
+import android.provider.DocumentsContract
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import android.widget.TextView
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.fragment.app.Fragment
+import androidx.navigation.fragment.NavHostFragment
+import androidx.recyclerview.widget.LinearLayoutManager
+import androidx.recyclerview.widget.RecyclerView
+import com.lagradost.cloudstream3.R
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+
+/**
+ * Prime Box offline library: pick a folder on the phone with the system picker (SAF), list the
+ * videos inside it and play them in the built-in player.
+ */
+class OfflineFragment : Fragment() {
+
+    private data class Video(val name: String, val uri: Uri, val size: Long)
+
+    private val prefs by lazy {
+        requireContext().getSharedPreferences("primebox_offline", Context.MODE_PRIVATE)
+    }
+
+    private val pickFolder = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        if (uri == null) return@registerForActivityResult
+        runCatching {
+            requireContext().contentResolver.takePersistableUriPermission(
+                uri,
+                Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+        }
+        prefs.edit().putString(KEY_TREE, uri.toString()).apply()
+        scan(uri)
+    }
+
+    private lateinit var adapter: OfflineAdapter
+    private lateinit var hint: TextView
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.fragment_offline, container, false)
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        hint = view.findViewById(R.id.offline_hint)
+        val list = view.findViewById<RecyclerView>(R.id.list)
+        list.layoutManager = LinearLayoutManager(requireContext())
+        adapter = OfflineAdapter { video -> play(video) }
+        list.adapter = adapter
+
+        view.findViewById<View>(R.id.offline_pick).setOnClickListener {
+            runCatching { pickFolder.launch(null) }
+        }
+
+        val saved = prefs.getString(KEY_TREE, null)
+        if (saved != null) {
+            runCatching { scan(Uri.parse(saved)) }
+        }
+    }
+
+    private fun scan(treeUri: Uri) {
+        viewLifecycleOwner.lifecycleScope.launch {
+            hint.text = "Scanning…"
+            val videos = withContext(Dispatchers.IO) {
+                runCatching { collect(requireContext().contentResolver, treeUri) }.getOrDefault(emptyList())
+            }
+            adapter.submit(videos)
+            hint.text = if (videos.isEmpty()) {
+                "No videos found in that folder. Pick another one."
+            } else {
+                videos.size.toString() + " video(s) found"
+            }
+        }
+    }
+
+    private fun collect(resolver: ContentResolver, treeUri: Uri): List<Video> {
+        val out = mutableListOf<Video>()
+        walk(resolver, treeUri, DocumentsContract.getTreeDocumentId(treeUri), out, 0)
+        return out.sortedBy { it.name.lowercase() }
+    }
+
+    private fun walk(
+        resolver: ContentResolver,
+        treeUri: Uri,
+        documentId: String,
+        out: MutableList<Video>,
+        depth: Int
+    ) {
+        if (depth > 8) return
+        val children = DocumentsContract.buildChildDocumentsUriUsingTree(treeUri, documentId)
+        val projection = arrayOf(
+            DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+            DocumentsContract.Document.COLUMN_MIME_TYPE,
+            DocumentsContract.Document.COLUMN_SIZE
+        )
+        resolver.query(children, projection, null, null, null)?.use { cursor ->
+            while (cursor.moveToNext()) {
+                val childId = cursor.getString(0)
+                val name = cursor.getString(1) ?: "video"
+                val mime = cursor.getString(2) ?: ""
+                val size = cursor.getLong(3)
+                if (mime == DocumentsContract.Document.MIME_TYPE_DIR) {
+                    walk(resolver, treeUri, childId, out, depth + 1)
+                } else if (mime.startsWith("video/") || VIDEO_EXT.any { name.lowercase().endsWith(it) }) {
+                    out.add(
+                        Video(
+                            name,
+                            DocumentsContract.buildDocumentUriUsingTree(treeUri, childId),
+                            size
+                        )
+                    )
+                }
+            }
+        }
+    }
+
+    private fun play(video: Video) {
+        runCatching {
+            NavHostFragment.findNavController(this).navigate(
+                R.id.navigation_offline_player,
+                Bundle().apply { putString("uri", video.uri.toString()) }
+            )
+        }
+    }
+
+    private class OfflineAdapter(private val onClick: (Video) -> Unit) :
+        RecyclerView.Adapter<OfflineAdapter.Holder>() {
+        private val items = mutableListOf<Video>()
+
+        fun submit(list: List<Video>) {
+            items.clear()
+            items.addAll(list)
+            notifyDataSetChanged()
+        }
+
+        override fun getItemCount(): Int = items.size
+
+        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder =
+            Holder(LayoutInflater.from(parent.context).inflate(R.layout.item_library_row, parent, false))
+
+        override fun onBindViewHolder(holder: Holder, position: Int) {
+            val video = items[position]
+            holder.title.text = video.name
+            holder.subtitle.text = formatSize(video.size)
+            holder.itemView.setOnClickListener { onClick(video) }
+        }
+
+        private fun formatSize(bytes: Long): String = when {
+            bytes <= 0L -> ""
+            bytes >= 1024L * 1024L * 1024L -> String.format("%.1f GB", bytes / 1073741824.0)
+            bytes >= 1024L * 1024L -> String.format("%.0f MB", bytes / 1048576.0)
+            else -> String.format("%.0f KB", bytes / 1024.0)
+        }
+
+        class Holder(view: View) : RecyclerView.ViewHolder(view) {
+            val title: TextView = view.findViewById(R.id.title)
+            val subtitle: TextView = view.findViewById(R.id.subtitle)
+        }
+    }
+
+    companion object {
+        private const val KEY_TREE = "tree_uri"
+        private val VIDEO_EXT = listOf(
+            ".mp4", ".mkv", ".webm", ".avi", ".mov", ".m4v", ".3gp", ".ts", ".flv", ".wmv"
+        )
+    }
+}
+""",
+    encoding="utf-8",
+)
+
+OFF_PLAYER.write_text(
+    """package com.lagradost.cloudstream3.ui.library
+
+import android.net.Uri
+import android.os.Bundle
+import android.view.LayoutInflater
+import android.view.View
+import android.view.ViewGroup
+import androidx.fragment.app.Fragment
+import androidx.media3.common.MediaItem
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
+import com.lagradost.cloudstream3.R
+
+/** Plays a local video (content:// uri) picked from the Offline screen. */
+class OfflinePlayerFragment : Fragment() {
+
+    private var player: ExoPlayer? = null
+
+    override fun onCreateView(
+        inflater: LayoutInflater,
+        container: ViewGroup?,
+        savedInstanceState: Bundle?
+    ): View = inflater.inflate(R.layout.fragment_offline_player, container, false)
+
+    override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
+        super.onViewCreated(view, savedInstanceState)
+        val raw = arguments?.getString("uri") ?: return
+        runCatching {
+            val exo = ExoPlayer.Builder(requireContext()).build()
+            player = exo
+            view.findViewById<PlayerView>(R.id.player_view).player = exo
+            exo.setMediaItem(MediaItem.fromUri(Uri.parse(raw)))
+            exo.prepare()
+            exo.playWhenReady = true
+        }
+    }
+
+    override fun onDestroyView() {
+        runCatching {
+            player?.stop()
+            player?.release()
+        }
+        player = null
+        super.onDestroyView()
+    }
+}
+""",
+    encoding="utf-8",
+)
+print("[ui] Offline screen + local player written")
+
+graph = NAVGRAPH.read_text(encoding="utf-8")
+if "@+id/navigation_offline" not in graph:
+    graph = graph.rstrip()
+    if not graph.endswith("</navigation>"):
+        sys.exit("[ui] navigation graph has no closing tag")
+    graph = graph[: -len("</navigation>")] + """
+    <fragment
+        android:id="@+id/navigation_offline"
+        android:name="com.lagradost.cloudstream3.ui.library.OfflineFragment" />
+
+    <fragment
+        android:id="@+id/navigation_offline_player"
+        android:name="com.lagradost.cloudstream3.ui.library.OfflinePlayerFragment">
+        <argument
+            android:name="uri"
+            app:argType="string" />
+    </fragment>
+</navigation>
+"""
+    NAVGRAPH.write_text(graph, encoding="utf-8")
+    print("[ui] mobile_navigation.xml -> offline destinations added")
+
+lib_frag = LIB_FRAGMENT.read_text(encoding="utf-8")
+if "navigation_offline" not in lib_frag:
+    lib_frag = lib_frag.replace(
+        'view.findViewById<View>(R.id.card_offline)?.setOnClickListener { toast("Offline: next step") }',
+        'view.findViewById<View>(R.id.card_offline)?.setOnClickListener {\n'
+        '            runCatching { nav.navigate(R.id.navigation_offline) }.onFailure { toast("Offline could not be opened") }\n'
+        '        }',
+        1,
+    )
+    LIB_FRAGMENT.write_text(lib_frag, encoding="utf-8")
+    print("[ui] LibraryHomeFragment.kt -> Offline card wired")
