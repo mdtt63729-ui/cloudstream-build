@@ -452,13 +452,19 @@ class LibraryListFragment : Fragment() {
         }
 
     private suspend fun loadHistory(): List<Row> {
-        val ids = runCatching { DataStoreHelper.getAllWatchStateIds() }.getOrNull().orEmpty()
-        return ids.mapNotNull { id ->
-            val cached: DownloadObjects.DownloadHeaderCached? = runCatching {
-                requireContext().getKey(DOWNLOAD_HEADER_CACHE, id.toString())
-            }.getOrNull()
-            cached?.let { Row(it.name, it.url, it.apiName, it.poster, it.apiName) }
+        val rows = mutableListOf<Row>()
+        val ids: List<Int> = DataStoreHelper.getAllWatchStateIds().orEmpty()
+        for (id in ids) {
+            val cached: DownloadObjects.DownloadHeaderCached? =
+                requireContext().getKey<DownloadObjects.DownloadHeaderCached>(
+                    DOWNLOAD_HEADER_CACHE,
+                    id.toString()
+                )
+            if (cached != null) {
+                rows.add(Row(cached.name, cached.url, cached.apiName, cached.poster, cached.apiName))
+            }
         }
+        return rows
     }
 
     private fun open(row: Row) {
