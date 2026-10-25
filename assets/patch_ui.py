@@ -17,7 +17,6 @@ import sys
 ROOT = pathlib.Path(".")
 
 STRINGS = ROOT / "app/src/main/res/values/strings.xml"
-MENU = ROOT / "app/src/main/res/menu/bottom_nav_menu.xml"
 HEAD = ROOT / "app/src/main/res/layout/fragment_home_head.xml"
 HOME_FRAGMENT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/home/HomeFragment.kt"
 MAIN_ACTIVITY = ROOT / "app/src/main/java/com/lagradost/cloudstream3/MainActivity.kt"
@@ -35,22 +34,8 @@ STRINGS.write_text(new_strings, encoding="utf-8")
 print("[ui] app name -> Prime Box")
 
 # ---------------------------------------------------------------- 1. bottom nav
-MENU.write_text(
-    """<?xml version="1.0" encoding="utf-8"?>
-<menu xmlns:android="http://schemas.android.com/apk/res/android">
-        <item
-            android:id="@+id/navigation_home"
-            android:icon="@drawable/home_icon_selector"
-            android:title="@string/title_home" />
-        <item
-            android:id="@+id/navigation_library"
-            android:icon="@drawable/library_icon_selector"
-            android:title="@string/library" />
-</menu>
-""",
-    encoding="utf-8",
-)
-print("[ui] bottom_nav_menu.xml -> Home + Library only")
+# Left exactly as upstream: the navigation menu is no longer overridden.
+print("[ui] bottom_nav_menu.xml -> untouched (upstream layout kept)")
 
 # ------------------------------------------- 2. settings button in the home top bar
 head = HEAD.read_text(encoding="utf-8")
