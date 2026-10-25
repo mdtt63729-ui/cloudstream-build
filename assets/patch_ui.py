@@ -34,8 +34,14 @@ new_strings, replaced = re.subn(
 )
 if replaced != 1:
     sys.exit("[ui] app_name string not found in values/strings.xml")
+if 'name="pb_me"' not in new_strings:
+    new_strings = new_strings.replace(
+        "</resources>",
+        '    <string name="pb_me">Me</string>\n</resources>',
+        1,
+    )
 STRINGS.write_text(new_strings, encoding="utf-8")
-print("[ui] app name -> Prime Box")
+print("[ui] app name -> Prime Box, added string pb_me")
 
 # ---------------------------------------------------------------- 1. bottom nav
 MENU.write_text(
@@ -49,11 +55,15 @@ MENU.write_text(
             android:id="@+id/navigation_library"
             android:icon="@drawable/library_icon_selector"
             android:title="@string/library" />
+        <item
+            android:id="@+id/navigation_settings"
+            android:icon="@drawable/settings_icon_selector"
+            android:title="@string/pb_me" />
 </menu>
 """,
     encoding="utf-8",
 )
-print("[ui] bottom_nav_menu.xml -> Home + Library")
+print("[ui] bottom_nav_menu.xml -> Home + Library + Me")
 
 # ---------------------------------------------------------------- 2. library card home
 CARD_BG.write_text(
@@ -204,37 +214,108 @@ if new_name not in graph:
     NAVGRAPH.write_text(graph, encoding="utf-8")
     print("[ui] mobile_navigation.xml -> navigation_library opens the card home")
 
-# ---------------------------------------------------------------- 3. settings button
+# ---------------------------------------------------------------- 3. top bar: logo + search
+LOGO = ROOT / "app/src/main/res/drawable/pb_logo.png"
+SEARCH_BG = ROOT / "app/src/main/res/drawable/pb_search_bg.xml"
+src_logo = pathlib.Path("overlay/assets/icons/ic_launcher-xxxhdpi.png")
+if src_logo.exists():
+    LOGO.write_bytes(src_logo.read_bytes())
+    print("[ui] pb_logo.png written from the launcher artwork")
+
+SEARCH_BG.write_text(
+    """<?xml version="1.0" encoding="utf-8"?>
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="#2A2624" />
+    <corners android:radius="24dp" />
+</shape>
+""",
+    encoding="utf-8",
+)
+
 head = HEAD.read_text(encoding="utf-8")
-if "home_head_settings" not in head:
-    anchor = (
+
+# 3a. app logo to the left of the search bar
+if "pb_logo" not in head:
+    search_anchor = (
+        '            <androidx.appcompat.widget.SearchView\n'
+        '                android:id="@+id/home_search"'
+    )
+    if search_anchor not in head:
+        sys.exit("[ui] home_search SearchView not found in fragment_home_head.xml")
+    logo_block = (
+        '            <ImageView\n'
+        '                android:id="@+id/pb_logo"\n'
+        '                android:layout_width="34dp"\n'
+        '                android:layout_height="34dp"\n'
+        '                android:layout_marginEnd="8dp"\n'
+        '                android:contentDescription="@string/app_name"\n'
+        '                android:src="@drawable/pb_logo" />\n'
+        '\n'
+    )
+    head = head.replace(search_anchor, logo_block + search_anchor, 1)
+
+# 3b. rounded search bar
+head = head.replace(
+    '                android:padding="0dp"\n                android:textColor="@color/white"',
+    '                android:padding="0dp"\n'
+    '                android:background="@drawable/pb_search_bg"\n'
+    '                android:paddingHorizontal="10dp"\n'
+    '                android:textColor="@color/white"',
+    1,
+)
+
+# 3c. green "Search" label + hidden settings view, before the profile avatar
+if "home_search_button" not in head:
+    profile_anchor = (
         '            <LinearLayout\n'
         '                android:id="@+id/home_head_profile_padding"'
     )
-    if anchor not in head:
-        sys.exit("[ui] anchor for the profile button not found in fragment_home_head.xml")
-    block = (
-        '            <LinearLayout\n'
-        '                android:id="@+id/home_head_settings"\n'
-        '                android:layout_width="44dp"\n'
-        '                android:layout_height="44dp"\n'
+    if profile_anchor not in head:
+        sys.exit("[ui] profile anchor not found in fragment_home_head.xml")
+    right_block = (
+        '            <TextView\n'
+        '                android:id="@+id/home_search_button"\n'
+        '                android:layout_width="wrap_content"\n'
+        '                android:layout_height="match_parent"\n'
+        '                android:background="?attr/selectableItemBackground"\n'
         '                android:clickable="true"\n'
         '                android:focusable="true"\n'
-        '                android:foreground="@drawable/rounded_select_ripple"\n'
         '                android:gravity="center"\n'
+        '                android:paddingHorizontal="10dp"\n'
+        '                android:text="Search"\n'
+        '                android:textColor="#4ADE80"\n'
+        '                android:textSize="15sp"\n'
+        '                android:textStyle="bold" />\n'
+        '\n'
+        '            <LinearLayout\n'
+        '                android:id="@+id/home_head_settings"\n'
+        '                android:layout_width="1dp"\n'
+        '                android:layout_height="1dp"\n'
+        '                android:visibility="gone"\n'
         '                android:orientation="horizontal">\n'
         '\n'
         '                <ImageView\n'
-        '                    android:layout_width="23dp"\n'
-        '                    android:layout_height="23dp"\n'
+        '                    android:layout_width="1dp"\n'
+        '                    android:layout_height="1dp"\n'
         '                    android:contentDescription="@string/title_settings"\n'
         '                    android:src="@drawable/settings_icon_selector" />\n'
         '            </LinearLayout>\n'
         '\n'
     )
-    head = head.replace(anchor, block + anchor, 1)
-    HEAD.write_text(head, encoding="utf-8")
-    print("[ui] fragment_home_head.xml -> settings button added")
+    head = head.replace(profile_anchor, right_block + profile_anchor, 1)
+
+# 3d. hide the profile avatar - the account now lives under the Me tab
+head = head.replace(
+    '                android:id="@+id/home_head_profile_padding"\n'
+    '                android:layout_width="50dp"',
+    '                android:id="@+id/home_head_profile_padding"\n'
+    '                android:visibility="gone"\n'
+    '                android:layout_width="50dp"',
+    1,
+)
+
+HEAD.write_text(head, encoding="utf-8")
+print("[ui] fragment_home_head.xml -> logo + rounded search bar + Search label")
 
 # ---------------------------------------------------------------- 4. wire settings button
 frag = HOME_FRAGMENT.read_text(encoding="utf-8")
@@ -252,6 +333,14 @@ if "home_head_settings" not in frag:
         "                runCatching {\n"
         "                    androidx.navigation.fragment.NavHostFragment.findNavController(this@HomeFragment)\n"
         "                        .navigate(R.id.navigation_settings)\n"
+        "                }\n"
+        "            }\n"
+        "\n"
+        "            binding.root.findViewById<View>(R.id.home_search_button)?.setOnClickListener {\n"
+        "                runCatching {\n"
+        "                    val searchView = binding.root.findViewById<androidx.appcompat.widget.SearchView>(R.id.home_search)\n"
+        "                    val query = searchView?.query?.toString().orEmpty()\n"
+        "                    if (query.isNotBlank()) searchView?.setQuery(query, true)\n"
         "                }\n"
         "            }\n"
     )
