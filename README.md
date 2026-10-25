@@ -56,6 +56,9 @@ deterministically by [`assets/patch_ui.py`](assets/patch_ui.py) together with th
    legacy and round mipmaps, and the 512 px Play Store icon.
 2. **App name** changed to **Prime Box** (`app_name` in `values/strings.xml`), and the **bottom
    navigation** is reduced to **Home**, **Library** and **Me** (`navigation_settings`).
+   The stock bottom bar is hidden and replaced by a **floating pill navigation bar**
+   (`PbNavBar.kt`, a `ComposeView` overlay) whose spring-driven selection animates smoothly
+   between the three tabs.
    The Home top bar now shows the app logo followed by a rounded search field and a green
    **Search** label, and the profile avatar there is hidden (the account lives under **Me**).
 3. **Library card home** (`LibraryHomeFragment` + `fragment_library_home.xml`) with Download,

@@ -991,3 +991,78 @@ if "navigation_offline" not in lib_frag:
     )
     LIB_FRAGMENT.write_text(lib_frag, encoding="utf-8")
     print("[ui] LibraryHomeFragment.kt -> Offline card wired")
+
+# source of the floating nav bar, injected into the checkout at build time
+NAVBAR_SOURCE = 'package com.lagradost.cloudstream3.ui.pb\n\nimport androidx.annotation.DrawableRes\nimport androidx.compose.animation.animateColorAsState\nimport androidx.compose.animation.core.Spring\nimport androidx.compose.animation.core.animateFloatAsState\nimport androidx.compose.animation.core.spring\nimport androidx.compose.foundation.background\nimport androidx.compose.foundation.interaction.MutableInteractionSource\nimport androidx.compose.foundation.interaction.collectIsPressedAsState\nimport androidx.compose.foundation.layout.Box\nimport androidx.compose.foundation.layout.BoxWithConstraints\nimport androidx.compose.foundation.layout.Row\nimport androidx.compose.foundation.layout.fillMaxHeight\nimport androidx.compose.foundation.layout.fillMaxWidth\nimport androidx.compose.foundation.layout.height\nimport androidx.compose.foundation.layout.offset\nimport androidx.compose.foundation.layout.padding\nimport androidx.compose.foundation.layout.size\nimport androidx.compose.foundation.layout.width\nimport androidx.compose.foundation.selection.selectable\nimport androidx.compose.foundation.shape.RoundedCornerShape\nimport androidx.compose.material3.Icon\nimport androidx.compose.material3.Surface\nimport androidx.compose.material3.Text\nimport androidx.compose.runtime.Composable\nimport androidx.compose.runtime.getValue\nimport androidx.compose.runtime.remember\nimport androidx.compose.ui.Alignment\nimport androidx.compose.ui.Modifier\nimport androidx.compose.ui.draw.clip\nimport androidx.compose.ui.draw.clipToBounds\nimport androidx.compose.ui.graphics.Color\nimport androidx.compose.ui.graphics.graphicsLayer\nimport androidx.compose.ui.platform.LocalDensity\nimport androidx.compose.ui.res.painterResource\nimport androidx.compose.ui.text.TextStyle\nimport androidx.compose.ui.text.font.FontWeight\nimport androidx.compose.ui.text.rememberTextMeasurer\nimport androidx.compose.ui.text.style.TextOverflow\nimport androidx.compose.ui.unit.dp\nimport androidx.compose.ui.unit.sp\nimport com.lagradost.cloudstream3.R\nimport kotlin.math.abs\nimport kotlin.math.floor\n\ndata class PbNavItem(val label: String, @DrawableRes val iconRes: Int)\n\n/** The three Prime Box tabs. */\nval PB_NAV_ITEMS = listOf(\n    PbNavItem("Home", R.drawable.home_icon_filled_24),\n    PbNavItem("Library", R.drawable.library_icon_filled),\n    PbNavItem("Me", R.drawable.settings_icon_filled),\n)\n\nprivate val BAR_BG = Color(0xFF221C1A)\nprivate val PILL_BG = Color(0xFF3A2E29)\nprivate val SELECTED_FG = Color(0xFFF0A58F)\nprivate val UNSELECTED_FG = Color(0xFF93A1AE)\nprivate val LABEL_STYLE = TextStyle(fontSize = 14.sp, fontWeight = FontWeight.SemiBold)\n\nprivate const val ICON_SLOT = 56f\nprivate const val LABEL_GAP = 8f\nprivate val PILL_HEIGHT = 44.dp\n\n/**\n * Floating, pill-shaped navigation bar with one spring-driven selection value.\n *\n * A single animated float (the fractional selection position) drives every slot width, the\n * label fade and the indicator, so the shift between two buttons is one continuous motion\n * instead of several animations that can drift apart.\n */\n@Composable\nfun PbNavBar(\n    selectedIndex: Int,\n    onSelect: (Int) -> Unit,\n    items: List<PbNavItem> = PB_NAV_ITEMS,\n    modifier: Modifier = Modifier\n) {\n    if (items.isEmpty()) return\n\n    val density = LocalDensity.current\n    val measurer = rememberTextMeasurer()\n    val labelWidths = items.map { item ->\n        with(density) { measurer.measure(item.label, LABEL_STYLE).size.width.toDp().value }\n    }\n\n    val safeSelected = selectedIndex.coerceIn(0, items.lastIndex)\n\n    val progress by animateFloatAsState(\n        targetValue = safeSelected.toFloat(),\n        animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow),\n        label = "pb-nav-progress"\n    )\n\n    val expand = items.indices.map { i -> (1f - abs(progress - i)).coerceIn(0f, 1f) }\n    val weights = items.indices.map { i ->\n        ICON_SLOT + (labelWidths[i] + LABEL_GAP) * expand[i]\n    }\n    val totalWeight = weights.sum().takeIf { it > 0f } ?: 1f\n\n    val lower = floor(progress).toInt().coerceIn(0, items.lastIndex)\n    val upper = (lower + 1).coerceAtMost(items.lastIndex)\n    val fraction = (progress - lower).coerceIn(0f, 1f)\n\n    Surface(\n        shape = RoundedCornerShape(30.dp),\n        color = BAR_BG,\n        tonalElevation = 8.dp,\n        shadowElevation = 14.dp,\n        modifier = modifier.fillMaxWidth()\n    ) {\n        BoxWithConstraints(\n            Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp),\n            contentAlignment = Alignment.CenterStart\n        ) {\n            val slotWidths = weights.map { maxWidth * (it / totalWeight) }\n            val before = slotWidths.take(lower).fold(0.dp) { acc, w -> acc + w }\n            val pillOffset = before + slotWidths[lower] * fraction\n            val pillWidth = slotWidths[lower] + (slotWidths[upper] - slotWidths[lower]) * fraction\n\n            Box(\n                Modifier\n                    .align(Alignment.CenterStart)\n                    .offset(x = pillOffset)\n                    .width(pillWidth)\n                    .height(PILL_HEIGHT)\n                    .clip(RoundedCornerShape(PILL_HEIGHT / 2))\n                    .background(PILL_BG)\n            )\n\n            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {\n                items.forEachIndexed { index, item ->\n                    val interaction = remember { MutableInteractionSource() }\n                    val pressed by interaction.collectIsPressedAsState()\n                    val selected = index == safeSelected\n                    val open = expand[index]\n\n                    val pressScale by animateFloatAsState(\n                        targetValue = if (pressed) 0.92f else 1f,\n                        animationSpec = spring(dampingRatio = 0.40f, stiffness = Spring.StiffnessHigh),\n                        label = "pb-nav-press-" + index\n                    )\n                    val content by animateColorAsState(\n                        targetValue = if (selected) SELECTED_FG else UNSELECTED_FG,\n                        animationSpec = spring(dampingRatio = 0.8f, stiffness = Spring.StiffnessMediumLow),\n                        label = "pb-nav-content-" + index\n                    )\n\n                    Row(\n                        Modifier\n                            .weight(weights[index])\n                            .height(PILL_HEIGHT)\n                            .clipToBounds()\n                            .graphicsLayer {\n                                scaleX = pressScale\n                                scaleY = pressScale\n                            }\n                            .selectable(\n                                selected = selected,\n                                interactionSource = interaction,\n                                indication = null\n                            ) { onSelect(index) },\n                        verticalAlignment = Alignment.CenterVertically\n                    ) {\n                        Box(\n                            Modifier.width(ICON_SLOT.dp).fillMaxHeight(),\n                            contentAlignment = Alignment.Center\n                        ) {\n                            Icon(\n                                painter = painterResource(item.iconRes),\n                                contentDescription = item.label,\n                                tint = content,\n                                modifier = Modifier.size(22.dp)\n                            )\n                        }\n                        Text(\n                            item.label,\n                            color = content,\n                            style = LABEL_STYLE,\n                            maxLines = 1,\n                            overflow = TextOverflow.Clip,\n                            modifier = Modifier.graphicsLayer {\n                                alpha = ((open - 0.3f) / 0.7f).coerceIn(0f, 1f)\n                                translationX = (1f - open) * 30f\n                            }\n                        )\n                    }\n                }\n            }\n        }\n    }\n}\n'
+NAV_HELPER_SOURCE = '    private fun setupFloatingNavBar(navController: NavController) {\n        val composeView =\n            findViewById<androidx.compose.ui.platform.ComposeView>(R.id.pb_nav_bar) ?: return\n        val selected = androidx.compose.runtime.mutableStateOf(0)\n        val destinations = intArrayOf(\n            R.id.navigation_home,\n            R.id.navigation_library,\n            R.id.navigation_settings,\n        )\n        navController.addOnDestinationChangedListener { _, destination, _ ->\n            selected.value = when (destination.id) {\n                R.id.navigation_library -> 1\n                R.id.navigation_settings -> 2\n                else -> 0\n            }\n        }\n        composeView.setViewCompositionStrategy(\n            androidx.compose.ui.platform.ViewCompositionStrategy.DisposeOnViewTreeLifecycleDestroyed\n        )\n        composeView.setContent {\n            com.lagradost.cloudstream3.ui.pb.PbNavBar(\n                selectedIndex = selected.value,\n                onSelect = { index ->\n                    runCatching {\n                        navController.navigate(destinations[index.coerceIn(0, destinations.lastIndex)])\n                    }\n                }\n            )\n        }\n    }\n\n'
+
+# ---------------------------------------------------------------- 8. floating nav bar
+NAVBAR_KT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/pb/PbNavBar.kt"
+ACTIVITY_LAYOUT = ROOT / "app/src/main/res/layout/activity_main.xml"
+
+NAVBAR_KT.parent.mkdir(parents=True, exist_ok=True)
+NAVBAR_KT.write_text(NAVBAR_SOURCE, encoding="utf-8")
+print("[ui] PbNavBar.kt written (floating bar, spring animation)")
+
+layout = ACTIVITY_LAYOUT.read_text(encoding="utf-8")
+
+# hide the stock bottom navigation view
+layout = layout.replace(
+    '        <com.google.android.material.bottomnavigation.BottomNavigationView\n'
+    '            android:id="@+id/nav_view"\n',
+    '        <com.google.android.material.bottomnavigation.BottomNavigationView\n'
+    '            android:id="@+id/nav_view"\n'
+    '            android:visibility="gone"\n',
+    1,
+)
+
+# leave room so list content is never hidden behind the floating bar
+layout = layout.replace(
+    '            android:id="@+id/nav_host_fragment"\n'
+    '            android:name="androidx.navigation.fragment.NavHostFragment"\n'
+    '            android:layout_width="0dp"\n'
+    '            android:layout_height="0dp"\n',
+    '            android:id="@+id/nav_host_fragment"\n'
+    '            android:name="androidx.navigation.fragment.NavHostFragment"\n'
+    '            android:layout_width="0dp"\n'
+    '            android:layout_height="0dp"\n'
+    '            android:layout_marginBottom="86dp"\n',
+    1,
+)
+
+if "@+id/pb_nav_bar" not in layout:
+    closer = "    </androidx.constraintlayout.widget.ConstraintLayout>"
+    idx = layout.rfind(closer)
+    if idx < 0:
+        sys.exit("[ui] ConstraintLayout closing tag not found in activity_main.xml")
+    compose_view = (
+        '\n        <androidx.compose.ui.platform.ComposeView\n'
+        '            android:id="@+id/pb_nav_bar"\n'
+        '            android:layout_width="0dp"\n'
+        '            android:layout_height="wrap_content"\n'
+        '            android:layout_marginStart="18dp"\n'
+        '            android:layout_marginEnd="18dp"\n'
+        '            android:layout_marginBottom="18dp"\n'
+        '            app:layout_constraintBottom_toBottomOf="parent"\n'
+        '            app:layout_constraintEnd_toEndOf="parent"\n'
+        '            app:layout_constraintStart_toStartOf="parent" />\n'
+    )
+    layout = layout[:idx] + compose_view + layout[idx:]
+
+ACTIVITY_LAYOUT.write_text(layout, encoding="utf-8")
+print("[ui] activity_main.xml -> floating ComposeView added, stock bar hidden")
+
+# wire it up in MainActivity
+activity = MAIN_ACTIVITY.read_text(encoding="utf-8")
+if "setupFloatingNavBar" not in activity:
+    anchor = "        val navController = navHostFragment.navController\n"
+    if anchor not in activity:
+        sys.exit("[ui] navController anchor not found in MainActivity.kt")
+    activity = activity.replace(anchor, anchor + "\n        setupFloatingNavBar(navController)\n", 1)
+
+    marker = "    private fun updateNavBar(destination: NavDestination) {"
+    if marker not in activity:
+        sys.exit("[ui] updateNavBar anchor not found in MainActivity.kt")
+    activity = activity.replace(marker, NAV_HELPER_SOURCE + marker, 1)
+    MAIN_ACTIVITY.write_text(activity, encoding="utf-8")
+    print("[ui] MainActivity.kt -> floating nav bar wired to the NavController")
