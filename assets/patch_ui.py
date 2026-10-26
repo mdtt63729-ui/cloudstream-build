@@ -1273,3 +1273,30 @@ if "applyProviderPriority" not in pm:
     )
     PLUGIN_MANAGER.write_text(pm, encoding="utf-8")
     print("[ui] PluginManager.kt -> primary providers moved to the front")
+PB_LANGS_SOURCE = 'package com.lagradost.cloudstream3.ui.pb\n\n/** Maps the provider\'s declared IETF language tag to a readable label. */\nobject PbLanguages {\n    private val NAMES = mapOf(\n        "hi" to "Hindi",\n        "en" to "English",\n        "ta" to "Tamil",\n        "te" to "Telugu",\n        "ml" to "Malayalam",\n        "kn" to "Kannada",\n        "bn" to "Bengali",\n        "mr" to "Marathi",\n        "gu" to "Gujarati",\n        "pa" to "Punjabi",\n        "ur" to "Urdu",\n        "or" to "Odia",\n        "as" to "Assamese",\n        "ne" to "Nepali",\n        "si" to "Sinhala",\n        "id" to "Indonesian",\n        "ja" to "Japanese",\n        "ko" to "Korean",\n        "zh" to "Chinese",\n        "es" to "Spanish",\n        "pt" to "Portuguese",\n        "ar" to "Arabic",\n        "fr" to "French",\n        "de" to "German",\n        "ru" to "Russian",\n        "tr" to "Turkish",\n        "th" to "Thai",\n        "vi" to "Vietnamese"\n    )\n\n    /** "hi" -> "Hindi", "pt-BR" -> "Portuguese"; null when the provider declares nothing. */\n    fun display(tag: String?): String? {\n        val primary = tag?.trim()?.lowercase()?.substringBefore(\'-\')\n        if (primary.isNullOrBlank()) return null\n        return NAMES[primary] ?: primary.uppercase()\n    }\n}\n'
+
+# ---------------------------------------------------------------- 14. provider language label
+LANG_KT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/pb/PbLanguages.kt"
+LANG_KT.parent.mkdir(parents=True, exist_ok=True)
+LANG_KT.write_text(PB_LANGS_SOURCE, encoding="utf-8")
+print("[ui] PbLanguages.kt written")
+
+RESULT_VM = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/result/ResultViewModel2.kt"
+rvm = RESULT_VM.read_text(encoding="utf-8")
+if "PbLanguages" not in rvm:
+    old_line = "        apiName = txt(apiName),\n"
+    if old_line not in rvm:
+        sys.exit("[ui] apiName info line not found in ResultViewModel2.kt")
+    new_line = (
+        "        apiName = txt(\n"
+        "            listOfNotNull(\n"
+        "                apiName,\n"
+        "                com.lagradost.cloudstream3.APIHolder.getApiFromNameNull(apiName)\n"
+        "                    ?.lang\n"
+        "                    ?.let { com.lagradost.cloudstream3.ui.pb.PbLanguages.display(it) }\n"
+        "            ).joinToString(\"  \u2022  \")\n"
+        "        ),\n"
+    )
+    rvm = rvm.replace(old_line, new_line, 1)
+    RESULT_VM.write_text(rvm, encoding="utf-8")
+    print("[ui] ResultViewModel2.kt -> provider language appended to the info row")
