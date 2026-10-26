@@ -1140,3 +1140,84 @@ if "MaterialSharedAxis" not in search:
     search = search.replace(class_anchor, class_anchor + override, 1)
     SEARCH_FRAGMENT.write_text(search, encoding="utf-8")
     print("[ui] SearchFragment.kt -> shared-axis open/close animation")
+
+# ---------------------------------------------------------------- 12. collapsing settings header
+SETTINGS_SCREEN = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/SettingsFragmentScreen.kt"
+settings = SETTINGS_SCREEN.read_text(encoding="utf-8")
+
+if "pbCollapse" not in settings:
+    # imports for the graphics layer used by the header animation
+    if "import androidx.compose.ui.graphics.graphicsLayer" not in settings:
+        anchor_import = "import androidx.compose.ui.Modifier\n"
+        if anchor_import not in settings:
+            sys.exit("[ui] Modifier import not found in SettingsFragmentScreen.kt")
+        settings = settings.replace(
+            anchor_import,
+            anchor_import +
+            "import androidx.compose.ui.graphics.TransformOrigin\n" +
+            "import androidx.compose.ui.graphics.graphicsLayer\n",
+            1,
+        )
+
+    # a little more room above the profile row
+    old_spacer = (
+        "                Spacer(modifier = Modifier.height(MaterialTheme.padding.small))\n"
+        "\n"
+        "                val default = DataStoreHelper.getDefaultAccount("
+    )
+    new_spacer = (
+        "                Spacer(modifier = Modifier.height(MaterialTheme.padding.large))\n"
+        "\n"
+        "                // 0 = expanded, 1 = fully collapsed into the top bar\n"
+        "                val pbCollapse = (outerListState.value.toFloat() / 220f).coerceIn(0f, 1f)\n"
+        "\n"
+        "                val default = DataStoreHelper.getDefaultAccount("
+    )
+    if old_spacer not in settings:
+        sys.exit("[ui] settings header spacer anchor not found")
+    settings = settings.replace(old_spacer, new_spacer, 1)
+
+    old_row = (
+        "                Row(\n"
+        "                    modifier = Modifier\n"
+        "                        .fillMaxSize()\n"
+        "                        .focusOutline()\n"
+    )
+    new_row = (
+        "                Row(\n"
+        "                    modifier = Modifier\n"
+        "                        .fillMaxWidth()\n"
+        "                        .graphicsLayer {\n"
+        "                            val s = 1f - 0.30f * pbCollapse\n"
+        "                            scaleX = s\n"
+        "                            scaleY = s\n"
+        "                            transformOrigin = TransformOrigin(0f, 0.5f)\n"
+        "                            translationX = -pbCollapse * 14f\n"
+        "                        }\n"
+        "                        .focusOutline()\n"
+    )
+    if old_row not in settings:
+        sys.exit("[ui] settings header Row anchor not found")
+    settings = settings.replace(old_row, new_row, 1)
+
+    old_pad = (
+        "                        .padding(\n"
+        "                            vertical = MaterialTheme.padding.large,\n"
+        "                            horizontal = MaterialTheme.padding.medium\n"
+        "                        )\n"
+        "                ) {\n"
+    )
+    new_pad = (
+        "                        .padding(\n"
+        "                            vertical = MaterialTheme.padding.large * (1f - pbCollapse) +\n"
+        "                                MaterialTheme.padding.small * pbCollapse,\n"
+        "                            horizontal = MaterialTheme.padding.medium\n"
+        "                        )\n"
+        "                ) {\n"
+    )
+    if old_pad not in settings:
+        sys.exit("[ui] settings header padding anchor not found")
+    settings = settings.replace(old_pad, new_pad, 1)
+
+    SETTINGS_SCREEN.write_text(settings, encoding="utf-8")
+    print("[ui] SettingsFragmentScreen.kt -> collapsing profile header")
