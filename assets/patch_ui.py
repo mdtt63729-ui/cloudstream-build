@@ -1227,3 +1227,51 @@ if "pbCollapse" not in settings:
 
     SETTINGS_SCREEN.write_text(settings, encoding="utf-8")
     print("[ui] SettingsFragmentScreen.kt -> collapsing profile header")
+
+# ---------------------------------------------------------------- 13. provider priority
+MAIN_API = ROOT / "library/src/commonMain/kotlin/com/lagradost/cloudstream3/MainAPI.kt"
+PLUGIN_MANAGER = ROOT / "app/src/main/java/com/lagradost/cloudstream3/plugins/PluginManager.kt"
+
+api = MAIN_API.read_text(encoding="utf-8")
+if "applyProviderPriority" not in api:
+    anchor = "    private fun initMap(forcedUpdate: Boolean = false) {"
+    if anchor not in api:
+        sys.exit("[ui] initMap anchor not found in MainAPI.kt")
+    helper = (
+        "    /** Puts the named providers first, keeping every other provider in its existing order. */\n"
+        "    fun applyProviderPriority(primaryNames: List<String>) {\n"
+        "        apis.withLock {\n"
+        "            val ordered = apis.sortedBy { api ->\n"
+        "                val index = primaryNames.indexOf(api.name)\n"
+        "                if (index == -1) primaryNames.size else index\n"
+        "            }\n"
+        "            var rebuilt = atomicListOf<MainAPI>()\n"
+        "            for (api in ordered) rebuilt = rebuilt + api\n"
+        "            apis = rebuilt\n"
+        "        }\n"
+        "        initMap(true)\n"
+        "    }\n"
+        "\n"
+    )
+    api = api.replace(anchor, helper + anchor, 1)
+    MAIN_API.write_text(api, encoding="utf-8")
+    print("[ui] MainAPI.kt -> applyProviderPriority added")
+
+pm = PLUGIN_MANAGER.read_text(encoding="utf-8")
+if "applyProviderPriority" not in pm:
+    pm_anchor = (
+        "        ___DO_NOT_CALL_FROM_A_PLUGIN_loadAllOnlinePlugins(activity)\n"
+        "        afterPluginsLoadedEvent.invoke(false)\n"
+    )
+    if pm_anchor not in pm:
+        sys.exit("[ui] plugin load anchor not found in PluginManager.kt")
+    pm = pm.replace(
+        pm_anchor,
+        pm_anchor +
+        "        com.lagradost.cloudstream3.APIHolder.applyProviderPriority(\n"
+        "            listOf(\"MovieBoxProvider\", \"AnimeDekhoProvider\")\n"
+        "        )\n",
+        1,
+    )
+    PLUGIN_MANAGER.write_text(pm, encoding="utf-8")
+    print("[ui] PluginManager.kt -> primary providers moved to the front")
