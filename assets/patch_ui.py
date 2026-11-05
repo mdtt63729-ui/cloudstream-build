@@ -1522,3 +1522,49 @@ if "PbUpdater" not in activity:
     )
     MAIN_ACTIVITY.write_text(activity, encoding="utf-8")
     print("[ui] MainActivity.kt -> update check started on launch")
+
+# ---------------------------------------------------------------- 18. real home bar fixes
+HOME_LAYOUT = ROOT / "app/src/main/res/layout/fragment_home.xml"
+home = HOME_LAYOUT.read_text(encoding="utf-8")
+
+# 18a. the account avatar actually lives here, not in the head layout
+if 'android:id="@+id/home_switch_account"' in home and "pb_hidden_account" not in home:
+    home = home.replace(
+        '            <ImageView\n'
+        '                android:id="@+id/home_switch_account"\n',
+        '            <ImageView\n'
+        '                android:id="@+id/home_switch_account"\n'
+        '                android:tag="pb_hidden_account"\n'
+        '                android:visibility="gone"\n',
+        1,
+    )
+    HOME_LAYOUT.write_text(home, encoding="utf-8")
+    print("[ui] fragment_home.xml -> account avatar hidden")
+
+# 18b. the search field is a recycler item, so the click must be wired where that item is bound
+PREVIEW = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/home/HomeParentItemAdapterPreview.kt"
+preview = PREVIEW.read_text(encoding="utf-8")
+if "pbSearchWired" not in preview:
+    marker = "            // search now opens the full search screen\n"
+    if marker not in preview:
+        sys.exit("[ui] search marker not found in HomeParentItemAdapterPreview.kt")
+    wiring = (
+        "            // pbSearchWired: the header is a recycler item, so bind the tap here\n"
+        "            (binding as? FragmentHomeHeadBinding)?.apply {\n"
+        "                homeSearch.setOnClickListener {\n"
+        "                    runCatching {\n"
+        "                        val host = (homeSearch.context as? androidx.fragment.app.FragmentActivity)\n"
+        "                            ?.supportFragmentManager\n"
+        "                            ?.findFragmentById(R.id.nav_host_fragment)\n"
+        "                        if (host != null) {\n"
+        "                            androidx.navigation.fragment.NavHostFragment\n"
+        "                                .findNavController(host)\n"
+        "                                .navigate(R.id.navigation_search)\n"
+        "                        }\n"
+        "                    }\n"
+        "                }\n"
+        "            }\n"
+    )
+    preview = preview.replace(marker, marker + wiring, 1)
+    PREVIEW.write_text(preview, encoding="utf-8")
+    print("[ui] HomeParentItemAdapterPreview.kt -> search tap wired on the header item")
