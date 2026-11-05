@@ -1422,3 +1422,28 @@ if old_wire in frag:
     print("[ui] HomeFragment.kt -> search field opens the full search screen")
 else:
     sys.exit("[ui] search wiring block not found in HomeFragment.kt")
+
+# 15h. the inline query listener belonged to the old SearchView, which is gone now
+PREVIEW_ADAPTER = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/home/HomeParentItemAdapterPreview.kt"
+preview = PREVIEW_ADAPTER.read_text(encoding="utf-8")
+old_listener = (
+    "            (binding as? FragmentHomeHeadBinding)?.apply {\n"
+    "                homeSearch.setOnQueryTextListener(object : SearchView.OnQueryTextListener {\n"
+    "                    override fun onQueryTextSubmit(query: String): Boolean {\n"
+    "                        viewModel.queryTextSubmit(query)\n"
+    "                        return true\n"
+    "                    }\n"
+    "\n"
+    "                    override fun onQueryTextChange(newText: String): Boolean {\n"
+    "                        viewModel.queryTextChange(newText)\n"
+    "                        return true\n"
+    "                    }\n"
+    "                })\n"
+    "            }\n"
+)
+if old_listener in preview:
+    preview = preview.replace(old_listener, "            // search now opens the full search screen\n", 1)
+    PREVIEW_ADAPTER.write_text(preview, encoding="utf-8")
+    print("[ui] HomeParentItemAdapterPreview.kt -> inline search listener removed")
+elif "search now opens the full search screen" not in preview:
+    sys.exit("[ui] inline search listener block not found")
