@@ -47,6 +47,19 @@ jobs:
       - name: Apply UI customisation
         run: python3 overlay/assets/patch_ui.py
 
+      - name: Bump version
+        run: |
+          python3 - "${{ github.run_number }}" <<'PYEOF'
+          import pathlib, re, sys
+          run = int(sys.argv[1])
+          path = pathlib.Path("gradle/libs.versions.toml")
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(r'^versionCode = ".*"$', 'versionCode = "%d"' % (48000 + run), text, count=1, flags=re.M)
+          text = re.sub(r'^versionName = ".*"$', 'versionName = "4.8.%d"' % run, text, count=1, flags=re.M)
+          path.write_text(text, encoding="utf-8")
+          print("version ->", "4.8.%d" % run, "code", 48000 + run)
+          PYEOF
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:

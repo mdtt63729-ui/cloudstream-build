@@ -1447,3 +1447,20 @@ if old_listener in preview:
     print("[ui] HomeParentItemAdapterPreview.kt -> inline search listener removed")
 elif "search now opens the full search screen" not in preview:
     sys.exit("[ui] inline search listener block not found")
+
+# ---------------------------------------------------------------- 16. in-app updates
+GITHUB_RELEASES_KT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/settings/GithubReleases.kt"
+releases = GITHUB_RELEASES_KT.read_text(encoding="utf-8")
+if "mdtt63729-ui" not in releases:
+    releases = releases.replace(
+        'const val APK_USERNAME = "recloudstream"',
+        'const val APK_USERNAME = "mdtt63729-ui"',
+        1,
+    )
+    releases = releases.replace(
+        'const val APK_REPOSITORY = "cloudstream"',
+        'const val APK_REPOSITORY = "cloudstream-build"',
+        1,
+    )
+    GITHUB_RELEASES_KT.write_text(releases, encoding="utf-8")
+    print("[ui] GithubReleases.kt -> in-app updates read our own releases")
