@@ -1300,3 +1300,125 @@ if "PbLanguages" not in rvm:
     rvm = rvm.replace(old_line, new_line, 1)
     RESULT_VM.write_text(rvm, encoding="utf-8")
     print("[ui] ResultViewModel2.kt -> provider language appended to the info row")
+
+# ---------------------------------------------------------------- 15. layout corrections
+ACTIVITY_LAYOUT = ROOT / "app/src/main/res/layout/activity_main.xml"
+LIB_HOME_LAYOUT = ROOT / "app/src/main/res/layout/fragment_library_home.xml"
+HEAD_LAYOUT = ROOT / "app/src/main/res/layout/fragment_home_head.xml"
+
+# 15a. remove the empty band that sat between the content and the floating nav bar
+layout = ACTIVITY_LAYOUT.read_text(encoding="utf-8")
+layout = layout.replace('            android:layout_marginBottom="86dp"\n', "", 1)
+ACTIVITY_LAYOUT.write_text(layout, encoding="utf-8")
+print("[ui] activity_main.xml -> bottom gap removed")
+
+# 15b. the library list was drawing under the status bar
+lib = LIB_HOME_LAYOUT.read_text(encoding="utf-8")
+if 'android:fitsSystemWindows="true"' not in lib:
+    lib = lib.replace(
+        '    android:background="#141010"\n',
+        '    android:background="#141010"\n    android:fitsSystemWindows="true"\n',
+        1,
+    )
+    LIB_HOME_LAYOUT.write_text(lib, encoding="utf-8")
+    print("[ui] fragment_library_home.xml -> status bar inset respected")
+
+head = HEAD_LAYOUT.read_text(encoding="utf-8")
+
+# 15c. the logo sat flush against the screen edge
+head = head.replace(
+    '                android:id="@+id/pb_logo"\n'
+    '                android:layout_width="34dp"\n',
+    '                android:id="@+id/pb_logo"\n'
+    '                android:layout_marginStart="14dp"\n'
+    '                android:layout_width="34dp"\n',
+    1,
+)
+
+# 15d. hide the second (alternate) profile avatar as well
+head = head.replace(
+    '            android:id="@+id/alternate_home_head_profile_padding"\n'
+    '            android:layout_width="50dp"\n',
+    '            android:id="@+id/alternate_home_head_profile_padding"\n'
+    '            android:visibility="gone"\n'
+    '            android:layout_width="50dp"\n',
+    1,
+)
+
+# 15e. the search field becomes a tap target that opens the full search screen
+search_block = re.compile(
+    r'            <androidx\.appcompat\.widget\.SearchView\n'
+    r'                android:id="@\+id/home_search".*?tools:ignore="RtlSymmetry" />\n',
+    re.S,
+)
+replacement = (
+    '            <LinearLayout\n'
+    '                android:id="@+id/home_search"\n'
+    '                android:layout_width="0dp"\n'
+    '                android:layout_height="42dp"\n'
+    '                android:layout_marginEnd="6dp"\n'
+    '                android:layout_weight="1"\n'
+    '                android:background="@drawable/pb_search_bg"\n'
+    '                android:clickable="true"\n'
+    '                android:focusable="true"\n'
+    '                android:gravity="center_vertical"\n'
+    '                android:orientation="horizontal"\n'
+    '                android:paddingHorizontal="14dp">\n'
+    '\n'
+    '                <ImageView\n'
+    '                    android:layout_width="20dp"\n'
+    '                    android:layout_height="20dp"\n'
+    '                    android:contentDescription="@string/search_hint"\n'
+    '                    android:src="@drawable/search_icon"\n'
+    '                    app:tint="#FFFFFF" />\n'
+    '\n'
+    '                <TextView\n'
+    '                    android:layout_width="wrap_content"\n'
+    '                    android:layout_height="wrap_content"\n'
+    '                    android:layout_marginStart="10dp"\n'
+    '                    android:text="@string/search_hint"\n'
+    '                    android:textColor="#B0B0B0"\n'
+    '                    android:textSize="14sp" />\n'
+    '            </LinearLayout>\n'
+)
+head, n = search_block.subn(replacement, head, count=1)
+if n != 1:
+    sys.exit("[ui] home_search SearchView block not found")
+print("[ui] fragment_home_head.xml -> tappable search field")
+
+# 15f. the Search action is white, not green
+head = head.replace('android:textColor="#4ADE80"', 'android:textColor="#FFFFFF"', 1)
+HEAD_LAYOUT.write_text(head, encoding="utf-8")
+
+# 15g. both the field and the action open the full search screen
+frag = HOME_FRAGMENT.read_text(encoding="utf-8")
+old_wire = (
+    "            binding.root.findViewById<View>(R.id.home_search_button)?.setOnClickListener {\n"
+    "                runCatching {\n"
+    "                    val searchView = binding.root.findViewById<androidx.appcompat.widget.SearchView>(R.id.home_search)\n"
+    "                    val query = searchView?.query?.toString().orEmpty()\n"
+    "                    if (query.isNotBlank()) searchView?.setQuery(query, true)\n"
+    "                }\n"
+    "            }\n"
+)
+new_wire = (
+    "            binding.root.findViewById<View>(R.id.home_search_button)?.setOnClickListener {\n"
+    "                runCatching {\n"
+    "                    androidx.navigation.fragment.NavHostFragment.findNavController(this@HomeFragment)\n"
+    "                        .navigate(R.id.navigation_search)\n"
+    "                }\n"
+    "            }\n"
+    "\n"
+    "            binding.root.findViewById<View>(R.id.home_search)?.setOnClickListener {\n"
+    "                runCatching {\n"
+    "                    androidx.navigation.fragment.NavHostFragment.findNavController(this@HomeFragment)\n"
+    "                        .navigate(R.id.navigation_search)\n"
+    "                }\n"
+    "            }\n"
+)
+if old_wire in frag:
+    frag = frag.replace(old_wire, new_wire, 1)
+    HOME_FRAGMENT.write_text(frag, encoding="utf-8")
+    print("[ui] HomeFragment.kt -> search field opens the full search screen")
+else:
+    sys.exit("[ui] search wiring block not found in HomeFragment.kt")
