@@ -1613,3 +1613,169 @@ if old_gate in pre:
     )
     PREINSTALLED_KT.write_text(pre, encoding="utf-8")
     print("[ui] PbPreinstalled.kt -> self-healing install of the repository and its providers")
+
+# ---------------------------------------------------------------- 20. nav search, no auto update
+# 20a. four tabs: Home, Search, Library, Me
+nav = NAVBAR_KT.read_text(encoding="utf-8")
+old_items = (
+    'val PB_NAV_ITEMS = listOf(\n'
+    '    PbNavItem("Home", iconRes = R.drawable.home_icon_filled_24),\n'
+    '    PbNavItem("Library", iconRes = R.drawable.library_icon_filled),\n'
+    '    PbNavItem("Me", vector = PbPersonIcon),\n'
+    ')'
+)
+new_items = (
+    'val PB_NAV_ITEMS = listOf(\n'
+    '    PbNavItem("Home", iconRes = R.drawable.home_icon_filled_24),\n'
+    '    PbNavItem("Search", iconRes = R.drawable.search_icon),\n'
+    '    PbNavItem("Library", iconRes = R.drawable.library_icon_filled),\n'
+    '    PbNavItem("Me", vector = PbPersonIcon),\n'
+    ')'
+)
+if old_items in nav:
+    NAVBAR_KT.write_text(nav.replace(old_items, new_items, 1), encoding="utf-8")
+    print("[ui] PbNavBar.kt -> Search tab added")
+
+# 20b. the controller knows the search destination and the new order
+activity = MAIN_ACTIVITY.read_text(encoding="utf-8")
+old_dest = (
+    '        val destinations = intArrayOf(\n'
+    '            R.id.navigation_home,\n'
+    '            R.id.navigation_library,\n'
+    '            R.id.navigation_settings,\n'
+    '        )\n'
+)
+new_dest = (
+    '        val destinations = intArrayOf(\n'
+    '            R.id.navigation_home,\n'
+    '            R.id.navigation_search,\n'
+    '            R.id.navigation_library,\n'
+    '            R.id.navigation_settings,\n'
+    '        )\n'
+)
+old_map = (
+    '            selected.value = when (destination.id) {\n'
+    '                R.id.navigation_library -> 1\n'
+    '                R.id.navigation_settings -> 2\n'
+    '                else -> 0\n'
+    '            }\n'
+)
+new_map = (
+    '            selected.value = when (destination.id) {\n'
+    '                R.id.navigation_search -> 1\n'
+    '                R.id.navigation_library -> 2\n'
+    '                R.id.navigation_settings -> 3\n'
+    '                else -> 0\n'
+    '            }\n'
+)
+old_tab = (
+    '            val onTab = destination.id == R.id.navigation_home ||\n'
+    '                destination.id == R.id.navigation_library ||\n'
+    '                destination.id == R.id.navigation_settings\n'
+)
+new_tab = (
+    '            val onTab = destination.id == R.id.navigation_home ||\n'
+    '                destination.id == R.id.navigation_search ||\n'
+    '                destination.id == R.id.navigation_library ||\n'
+    '                destination.id == R.id.navigation_settings\n'
+)
+if old_dest in activity and old_map in activity and old_tab in activity:
+    activity = activity.replace(old_dest, new_dest, 1)
+    activity = activity.replace(old_map, new_map, 1)
+    activity = activity.replace(old_tab, new_tab, 1)
+    MAIN_ACTIVITY.write_text(activity, encoding="utf-8")
+    print("[ui] MainActivity.kt -> search tab wired")
+
+# 20c. the search field leaves the home header
+head = HEAD_LAYOUT.read_text(encoding="utf-8")
+if "pb_search_hidden" not in head:
+    head = head.replace(
+        '                android:id="@+id/home_search"\n',
+        '                android:id="@+id/home_search"\n'
+        '                android:tag="pb_search_hidden"\n'
+        '                android:visibility="gone"\n',
+        1,
+    )
+    head = head.replace(
+        '                android:id="@+id/home_search_button"\n',
+        '                android:id="@+id/home_search_button"\n'
+        '                android:visibility="gone"\n',
+        1,
+    )
+    HEAD_LAYOUT.write_text(head, encoding="utf-8")
+    print("[ui] fragment_home_head.xml -> search field removed from the header")
+
+# 20d. updates ask first: Download or Maybe later
+UPDATER_KT.write_text(PB_UPDATER_SOURCE, encoding="utf-8")
+up = UPDATER_KT.read_text(encoding="utf-8")
+old_call = (
+    '        val target = File(File(activity.filesDir, "update").apply { mkdirs() }, "primebox.apk")\n'
+    '        val ok = runCatching { download(activity, release, target) }.getOrDefault(false)\n'
+    '        if (!ok) return\n'
+    '        prefs.edit().putString(KEY_FILE, target.absolutePath).putString(KEY_TAG, release.tag).apply()\n'
+    '        ui(activity) { showSheet(activity, target, release.tag) }\n'
+)
+new_call = (
+    '        // never download on its own - ask first\n'
+    '        ui(activity) { showPrompt(activity, release) }\n'
+)
+if old_call in up:
+    up = up.replace(old_call, new_call, 1)
+    prompt = (
+        '\n    private fun showPrompt(activity: Activity, release: Release) {\n'
+        '        val sheet = sheetFor(activity) ?: return\n'
+        '        val bar = sheet.findViewById<LinearProgressIndicator>(R.id.pb_update_progress)\n'
+        '        val title = sheet.findViewById<TextView>(R.id.pb_update_title)\n'
+        '        val subtitle = sheet.findViewById<TextView>(R.id.pb_update_subtitle)\n'
+        '        val action = sheet.findViewById<MaterialButton>(R.id.pb_update_action)\n'
+        '        val dismiss = sheet.findViewById<MaterialButton>(R.id.pb_update_dismiss)\n'
+        '        bar.visibility = View.GONE\n'
+        '        title.text = "Update available"\n'
+        '        subtitle.text = "Version " + release.tag.removePrefix("v") + " is ready to download."\n'
+        '        dismiss.visibility = View.VISIBLE\n'
+        '        dismiss.text = "Maybe later"\n'
+        '        dismiss.setOnClickListener { runCatching { sheet.dismiss() } }\n'
+        '        action.visibility = View.VISIBLE\n'
+        '        action.text = "Download"\n'
+        '        action.setOnClickListener {\n'
+        '            runCatching { sheet.dismiss() }\n'
+        '            CoroutineScope(Dispatchers.IO).launch {\n'
+        '                val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)\n'
+        '                val target = File(\n'
+        '                    File(activity.filesDir, "update").apply { mkdirs() },\n'
+        '                    "primebox.apk"\n'
+        '                )\n'
+        '                val ok = runCatching { download(activity, release, target) }.getOrDefault(false)\n'
+        '                if (!ok) return@launch\n'
+        '                prefs.edit()\n'
+        '                    .putString(KEY_FILE, target.absolutePath)\n'
+        '                    .putString(KEY_TAG, release.tag)\n'
+        '                    .apply()\n'
+        '                ui(activity) { showSheet(activity, target, release.tag) }\n'
+        '            }\n'
+        '        }\n'
+        '    }\n'
+    )
+    up = up.replace('\n    private fun showSheet(activity: Activity, file: File, tag: String) {',
+                    prompt + '\n    private fun showSheet(activity: Activity, file: File, tag: String) {', 1)
+    UPDATER_KT.write_text(up, encoding="utf-8")
+    print("[ui] PbUpdater.kt -> download is offered, never forced")
+
+# 20e. a second button in the sheet
+xml = sheet_xml.read_text(encoding="utf-8")
+if "pb_update_dismiss" not in xml:
+    button = (
+        '\n        <com.google.android.material.button.MaterialButton\n'
+        '            android:id="@+id/pb_update_dismiss"\n'
+        '            android:layout_width="match_parent"\n'
+        '            android:layout_height="wrap_content"\n'
+        '            android:layout_marginTop="8dp"\n'
+        '            android:visibility="gone"\n'
+        '            android:text="Maybe later"\n'
+        '            app:backgroundTint="#2A2624"\n'
+        '            app:cornerRadius="24dp" />\n'
+    )
+    xml = xml.replace("    </LinearLayout>\n</com.google.android.material.card.MaterialCardView>",
+                      button + "    </LinearLayout>\n</com.google.android.material.card.MaterialCardView>", 1)
+    sheet_xml.write_text(xml, encoding="utf-8")
+    print("[ui] pb_update_dialog.xml -> Maybe later button added")
