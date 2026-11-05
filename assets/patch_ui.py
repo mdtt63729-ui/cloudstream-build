@@ -1568,3 +1568,48 @@ if "pbSearchWired" not in preview:
     preview = preview.replace(marker, marker + wiring, 1)
     PREVIEW.write_text(preview, encoding="utf-8")
     print("[ui] HomeParentItemAdapterPreview.kt -> search tap wired on the header item")
+
+# ---------------------------------------------------------------- 19. self-healing setup
+pre = PREINSTALLED_KT.read_text(encoding="utf-8")
+old_gate = (
+    '        val prefs = activity.getSharedPreferences(PREFS, Context.MODE_PRIVATE)\n'
+    '        if (prefs.getBoolean("done_v1", false)) return\n'
+    '        prefs.edit().putBoolean("done_v1", true).apply()\n'
+)
+new_gate = (
+    '        // the repository is registered on every launch - idempotent\n'
+    '        runCatching {\n'
+    '            val existing =\n'
+    '                activity.getKey<Array<RepositoryData>>(REPOSITORIES_KEY) ?: emptyArray()\n'
+    '            if (existing.none { it.url == REPO_URL }) {\n'
+    '                activity.setKey(\n'
+    '                    REPOSITORIES_KEY,\n'
+    '                    existing + RepositoryData("Phisher Extensions", REPO_URL)\n'
+    '                )\n'
+    '            }\n'
+    '        }\n'
+    '\n'
+    '        // only the providers that are still missing get installed, so a failed\n'
+    '        // first run is repaired on the next launch instead of being skipped\n'
+    '        val installed = runCatching {\n'
+    '            PluginManager.getPluginsOnline().map { it.internalName }.toSet()\n'
+    '        }.getOrDefault(emptySet<String>())\n'
+    '        val missing = PLUGINS.filter { it.internalName !in installed }\n'
+    '        if (missing.isEmpty()) return\n'
+)
+if old_gate in pre:
+    pre = pre.replace(old_gate, new_gate, 1)
+    pre = pre.replace("progress.max = PLUGINS.size + 1", "progress.max = missing.size + 1", 1)
+    pre = pre.replace("for (plugin in PLUGINS) {", "for (plugin in missing) {", 1)
+    pre = pre.replace(
+        'current.toString() + " / " + (PLUGINS.size + 1)',
+        'current.toString() + " / " + (missing.size + 1)',
+        1,
+    )
+    pre = pre.replace(
+        '(PLUGINS.size - failed).toString() + " of " + PLUGINS.size',
+        '(missing.size - failed).toString() + " of " + missing.size',
+        1,
+    )
+    PREINSTALLED_KT.write_text(pre, encoding="utf-8")
+    print("[ui] PbPreinstalled.kt -> self-healing install of the repository and its providers")
