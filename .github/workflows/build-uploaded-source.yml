@@ -193,14 +193,16 @@ jobs:
         working-directory: src
         run: |
           python3 <<'PYEOF'
-          import pathlib, re
+          import pathlib, re, os
           path = pathlib.Path("gradle/libs.versions.toml")
           text = path.read_text(encoding="utf-8")
           # bump whatever the archive already carries, so the number keeps rising
           def bump_code(m):
               return 'versionCode = "%d"' % (int(m.group(1)) + 1)
           def bump_name(m):
-              return 'versionName = "%s.%s.%d"' % (m.group(1), m.group(2), int(m.group(3)) + 1)
+              # the archive is always the same, so add the run number to keep rising
+              run = int(os.environ.get("RUN_NUMBER", "0"))
+              return 'versionName = "%s.%s.%d"' % (m.group(1), m.group(2), int(m.group(3)) + 1 + run)
           text = re.sub(r'^versionCode = "(\d+)"$', bump_code, text, count=1, flags=re.M)
           text = re.sub(r'^versionName = "(\d+)\.(\d+)\.(\d+)"$', bump_name, text, count=1, flags=re.M)
           path.write_text(text, encoding="utf-8")
