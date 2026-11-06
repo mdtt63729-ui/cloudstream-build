@@ -1779,3 +1779,15 @@ if "pb_update_dismiss" not in xml:
                       button + "    </LinearLayout>\n</com.google.android.material.card.MaterialCardView>", 1)
     sheet_xml.write_text(xml, encoding="utf-8")
     print("[ui] pb_update_dialog.xml -> Maybe later button added")
+
+# ---------------------------------------------------------------- 21. status bar matches the app
+STYLES_XML = ROOT / "app/src/main/res/values/styles.xml"
+styles = STYLES_XML.read_text(encoding="utf-8")
+if 'android:statusBarColor">?attr/iconGrayBackground<' in styles:
+    styles = styles.replace(
+        '<item name="android:statusBarColor">?attr/iconGrayBackground</item>',
+        '<item name="android:statusBarColor">?attr/primaryBlackBackground</item>',
+        1,
+    )
+    STYLES_XML.write_text(styles, encoding="utf-8")
+    print("[ui] styles.xml -> status bar uses the app background instead of the grey strip")
