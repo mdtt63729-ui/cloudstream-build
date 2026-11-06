@@ -91,9 +91,9 @@ jobs:
           PYEOF
 
       - name: Add crash logger and defensive guards
-        # Writes any crash to /storage/emulated/0/bomb/ (falling back to the app's
-        # own external folder when that path is not writable) and makes the
-        # launch-time Prime Box hooks unable to take the activity down.
+        # Logs go to /storage/emulated/0/bomb/ when that folder is writable, and
+        # always to the app's own external folder as a fallback. A heartbeat is
+        # written on every launch so the folder is populated even with no crash.
         working-directory: src
         run: |
           python3 <<'PYEOF'
@@ -104,6 +104,7 @@ jobs:
           logger.write_text("""package com.lagradost.cloudstream3.ui.pb
 
           import android.content.Context
+          import android.os.Build
           import android.os.Environment
           import java.io.File
           import java.io.PrintWriter
@@ -112,39 +113,57 @@ jobs:
           import java.util.Date
           import java.util.Locale
 
-          /** Saves the stack trace of any crash so it can be inspected on the device. */
+          /**
+           * Writes a heartbeat on every launch and the stack trace of any crash.
+           *
+           * Files are written to /storage/emulated/0/bomb/ and, when that folder is not
+           * writable (scoped storage), to the app's own external folder as well.
+           */
           object PbCrashLogger {
+              private const val FOLDER = "bomb"
+
               fun install(context: Context) {
                   val app = context.applicationContext
                   val previous = Thread.getDefaultUncaughtExceptionHandler()
                   Thread.setDefaultUncaughtExceptionHandler { thread, error ->
-                      runCatching { write(app, thread, error) }
+                      runCatching { write(app, "crash", thread, error) }
                       previous?.uncaughtException(thread, error)
                   }
+                  runCatching { write(app, "launch", Thread.currentThread(), null) }
               }
 
-              private fun write(context: Context, thread: Thread, error: Throwable) {
-                  val buffer = StringWriter()
-                  error.printStackTrace(PrintWriter(buffer))
+              fun note(context: Context, tag: String) {
+                  runCatching { write(context.applicationContext, tag, Thread.currentThread(), null) }
+              }
+
+              private fun folders(context: Context): List<File> {
+                  val list = ArrayList<File>()
+                  list.add(File(Environment.getExternalStorageDirectory(), FOLDER))
+                  context.getExternalFilesDir(null)?.let { list.add(File(it, FOLDER)) }
+                  list.add(File(context.filesDir, FOLDER))
+                  return list
+              }
+
+              private fun write(context: Context, tag: String, thread: Thread, error: Throwable?) {
                   val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
                   val body = buildString {
                       appendLine("time: " + stamp)
+                      appendLine("tag: " + tag)
                       appendLine("thread: " + thread.name)
                       appendLine("version: " + com.lagradost.cloudstream3.BuildConfig.VERSION_NAME)
-                      appendLine()
-                      append(buffer.toString())
+                      appendLine("sdk: " + Build.VERSION.SDK_INT)
+                      if (error != null) {
+                          val buffer = StringWriter()
+                          error.printStackTrace(PrintWriter(buffer))
+                          appendLine()
+                          append(buffer.toString())
+                      }
                   }
-                  val folders = listOf(
-                      File(Environment.getExternalStorageDirectory(), "bomb"),
-                      File(context.getExternalFilesDir(null), "bomb"),
-                      File(context.filesDir, "bomb"),
-                  )
-                  for (folder in folders) {
-                      val done = runCatching {
+                  for (folder in folders(context)) {
+                      runCatching {
                           if (!folder.exists()) folder.mkdirs()
-                          File(folder, "crash-" + stamp + ".txt").writeText(body)
-                      }.isSuccess
-                      if (done) return
+                          File(folder, tag + "-" + stamp + ".txt").writeText(body)
+                      }
                   }
               }
           }
@@ -153,40 +172,58 @@ jobs:
 
           main = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/MainActivity.kt")
           text = main.read_text(encoding="utf-8")
-          anchor = "        CommonActivity.init(this)\n"
-          guard = (
-              anchor
-              + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\n"
-          )
+          anchor = "        CommonActivity.init(this)\\n"
           if "PbCrashLogger" not in text and anchor in text:
-              text = text.replace(anchor, guard, 1)
+              text = text.replace(
+                  anchor,
+                  anchor + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\\n",
+                  1,
+              )
           for call in (
               "com.lagradost.cloudstream3.ui.pb.PbPreinstalled.seed(this)",
               "com.lagradost.cloudstream3.ui.pb.PbUpdater.checkAndOffer(this)",
           ):
-              if call + "\n" in text:
+              if "        " + call + "\\n" in text:
                   text = text.replace(
-                      "        " + call + "\n",
-                      "        runCatching { " + call + " }\n",
+                      "        " + call + "\\n",
+                      "        runCatching { " + call + " }\\n",
                       1,
                   )
           if "setupFloatingNavBar(navController)" in text and "runCatching { setupFloatingNavBar" not in text:
               text = text.replace(
-                  "        setupFloatingNavBar(navController)\n",
-                  "        runCatching { setupFloatingNavBar(navController) }\n",
+                  "        setupFloatingNavBar(navController)\\n",
+                  "        runCatching { setupFloatingNavBar(navController) }\\n",
+                  1,
+              )
+          # a marker once the activity has finished starting, to see how far it gets
+          if "pb-activity-created" not in text:
+              text = text.replace(
+                  "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\\n",
+                  "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\\n"
+                  "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.note(this, \"pb-activity-created\") }\\n",
                   1,
               )
           main.write_text(text, encoding="utf-8")
-          print("MainActivity.kt guarded")
+          print("MainActivity.kt guarded and marked")
 
           manifest = pathlib.Path("app/src/main/AndroidManifest.xml")
           mtext = manifest.read_text(encoding="utf-8")
+          if "MANAGE_EXTERNAL_STORAGE" not in mtext:
+              perm = ('    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"\\n'
+                      '        tools:ignore="ScopedStorage" />\\n')
+              mtext = mtext.replace("<application", perm + "\\n    <application", 1)
           if "WRITE_EXTERNAL_STORAGE" not in mtext:
-              perm = ('    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\n'
-                      '        android:maxSdkVersion="28" />\n')
-              mtext = mtext.replace("<application", perm + "\n    <application", 1)
-              manifest.write_text(mtext, encoding="utf-8")
-              print("manifest: storage permission added")
+              perm2 = ('    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"\\n'
+                       '        android:maxSdkVersion="28" />\\n')
+              mtext = mtext.replace("<application", perm2 + "\\n    <application", 1)
+          if "xmlns:tools" not in mtext.split("<application")[0]:
+              mtext = mtext.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\\n    xmlns:tools="http://schemas.android.com/tools"',
+                  1,
+              )
+          manifest.write_text(mtext, encoding="utf-8")
+          print("manifest: storage permissions added")
           PYEOF
 
       - name: Disable automatic update downloads
