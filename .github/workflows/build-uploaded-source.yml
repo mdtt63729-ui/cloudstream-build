@@ -189,6 +189,34 @@ jobs:
               print("manifest: storage permission added")
           PYEOF
 
+      - name: Disable automatic update downloads
+        # An update may only start when the user taps Download. The stock
+        # CloudStream auto-updater is switched off so nothing downloads by itself.
+        working-directory: src
+        run: |
+          python3 <<'PYEOF'
+          import pathlib
+
+          updater = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/utils/InAppUpdater.kt")
+          text = updater.read_text(encoding="utf-8")
+          old = "        if (checkAutoUpdate && !autoUpdateEnabled) {\n            return false\n        }\n"
+          new = ("        // Prime Box: an automatic check must never download anything.\n"
+                 "        if (checkAutoUpdate) {\n            return false\n        }\n")
+          if old in text and "an automatic check must never download" not in text:
+              updater.write_text(text.replace(old, new, 1), encoding="utf-8")
+              print("InAppUpdater.kt: automatic updates disabled")
+          else:
+              print("InAppUpdater.kt: already guarded or pattern missing")
+
+          pref = pathlib.Path("shared/src/commonMain/kotlin/com/lagradost/cloudstream4/DevicePreferenceStore.kt")
+          ptext = pref.read_text(encoding="utf-8")
+          old_pref = 'val showAppUpdates = preferences.getBoolean("auto_update", true)'
+          new_pref = 'val showAppUpdates = preferences.getBoolean("auto_update", false)'
+          if old_pref in ptext:
+              pref.write_text(ptext.replace(old_pref, new_pref, 1), encoding="utf-8")
+              print("DevicePreferenceStore.kt: app update prompts default to off")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
