@@ -1,0 +1,103 @@
+name: Build uploaded source
+
+# Compiles the source archive exactly as uploaded, without patching it.
+# The only edit is the version bump, which is applied to the build config.
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_url:
+        description: "URL of the source zip"
+        required: false
+        default: "https://github.com/mdtt63729-ui/cloudstream-build/releases/download/v4.8.36-source/PrimeBox-source.zip"
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build uploaded source
+    runs-on: ubuntu-latest
+    steps:
+      - name: Fetch source archive
+        run: |
+          set -euo pipefail
+          URL="${{ github.event.inputs.source_url }}"
+          if [ -z "$URL" ]; then
+            URL="https://github.com/mdtt63729-ui/cloudstream-build/releases/download/v4.8.36-source/PrimeBox-source.zip"
+          fi
+          curl -sL -o source.zip "$URL"
+          ls -la source.zip
+          mkdir -p src
+          unzip -q source.zip -d src
+          echo "--- project root ---"
+          ls src
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: "platform-tools"
+
+      - name: Install SDK packages
+        run: |
+          yes | sdkmanager --licenses > /dev/null || true
+          sdkmanager "platforms;android-37" "build-tools;37.0.0" \
+            || sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0" \
+            || echo "SDK 37 not preinstalled; Gradle will try to download it"
+
+      - name: Bump version
+        working-directory: src
+        run: |
+          python3 - "${{ github.run_number }}" <<'PYEOF'
+          import pathlib, re, sys
+          run = int(sys.argv[1])
+          path = pathlib.Path("gradle/libs.versions.toml")
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(r'^versionCode = ".*"$', 'versionCode = "%d"' % (48000 + run), text, count=1, flags=re.M)
+          text = re.sub(r'^versionName = ".*"$', 'versionName = "4.8.%d"' % run, text, count=1, flags=re.M)
+          path.write_text(text, encoding="utf-8")
+          print("version ->", "4.8.%d" % run, "code", 48000 + run)
+          PYEOF
+
+      - name: Build stable release APK
+        working-directory: src
+        run: ./gradlew :app:assembleStableRelease --no-daemon --stacktrace
+
+      - name: Collect APK
+        working-directory: src
+        run: |
+          set -euo pipefail
+          find app/build/outputs -name '*.apk' -print
+          APK="$(find app/build/outputs -name '*.apk' | head -n 1)"
+          if [ -z "$APK" ]; then echo "::error::No APK produced"; exit 1; fi
+          cp "$APK" "$RUNNER_TEMP/primebox-unsigned.apk"
+
+      - name: Sign APK
+        env:
+          KEYSTORE_B64: ${{ secrets.SIGNING_KEYSTORE_BASE64 }}
+          SECRET_STORE_PASS: ${{ secrets.SIGNING_STORE_PASSWORD }}
+          SECRET_KEY_ALIAS: ${{ secrets.SIGNING_KEY_ALIAS }}
+          SECRET_KEY_PASS: ${{ secrets.SIGNING_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          KS="$RUNNER_TEMP/primebox.keystore"
+          echo "$KEYSTORE_B64" | base64 -d > "$KS"
+          BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
+          "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$SECRET_STORE_PASS" \
+            --key-pass "pass:$SECRET_KEY_PASS" \
+            --out "$RUNNER_TEMP/PrimeBox-signed.apk" "$RUNNER_TEMP/primebox-unsigned.apk"
+          "$BT/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/PrimeBox-signed.apk"
+
+      - name: Upload signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrimeBox-uploaded-source
+          path: ${{ runner.temp }}/PrimeBox-signed.apk
+          if-no-files-found: error
+          retention-days: 14
