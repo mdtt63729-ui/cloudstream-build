@@ -1,7 +1,7 @@
 name: Build uploaded source
 
-# Compiles the source archive exactly as uploaded, without patching it.
-# The only edit is the version bump, which is applied to the build config.
+# Compiles the source archive exactly as uploaded. The only edits are the version
+# bump and the two compile fixes needed to make the archive build at all.
 
 on:
   workflow_dispatch:
@@ -34,7 +34,7 @@ jobs:
           ls src
 
       - name: Initialise git metadata
-        # CloudStream's build reads .git/HEAD to stamp the commit hash, and the
+        # CloudStream's build reads .git/HEAD to stamp the commit hash and the
         # archive has no repository inside it, so give it a minimal one.
         run: |
           set -euo pipefail
@@ -62,12 +62,40 @@ jobs:
             || sdkmanager --channel=3 "platforms;android-37" "build-tools;37.0.0" \
             || echo "SDK 37 not preinstalled; Gradle will try to download it"
 
+      - name: Fix the compile errors in the archive
+        # The uploaded source does not compile as-is. These are the only edits
+        # applied to it, and they exist solely to make it build.
+        working-directory: src
+        run: |
+          python3 <<'PYEOF'
+          import pathlib
+
+          adapter = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/download/DownloadAdapter.kt")
+          text = adapter.read_text(encoding="utf-8")
+          old = "onItemClickEvent.invoke(DownloadClickEvent(this.itemId, data))"
+          new = "onHeaderClickEvent.invoke(DownloadHeaderClickEvent(this.itemId, data))"
+          if old in text:
+              adapter.write_text(text.replace(old, new, 1), encoding="utf-8")
+              print("DownloadAdapter.kt: header menu emits DownloadHeaderClickEvent")
+
+          fragment = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/download/DownloadFragment.kt")
+          lines = fragment.read_text(encoding="utf-8").splitlines(keepends=True)
+          kept = [
+              line for line in lines
+              if "downloadStreamButton?.shrink()" not in line
+              and "downloadStreamButton?.extend()" not in line
+          ]
+          if len(kept) != len(lines):
+              fragment.write_text("".join(kept), encoding="utf-8")
+              print("DownloadFragment.kt: removed the shrink/extend calls")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
-          python3 - "${{ github.run_number }}" <<'PYEOF'
-          import pathlib, re, sys
-          run = int(sys.argv[1])
+          python3 <<'PYEOF'
+          import pathlib, re, os
+          run = int(os.environ["RUN_NUMBER"])
           path = pathlib.Path("gradle/libs.versions.toml")
           text = path.read_text(encoding="utf-8")
           text = re.sub(r'^versionCode = ".*"$', 'versionCode = "%d"' % (48000 + run), text, count=1, flags=re.M)
@@ -75,6 +103,8 @@ jobs:
           path.write_text(text, encoding="utf-8")
           print("version ->", "4.8.%d" % run, "code", 48000 + run)
           PYEOF
+        env:
+          RUN_NUMBER: ${{ github.run_number }}
 
       - name: Build stable release APK
         working-directory: src
