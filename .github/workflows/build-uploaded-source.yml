@@ -303,8 +303,10 @@ jobs:
           BT="$(ls -d "$ANDROID_HOME"/build-tools/* | sort -V | tail -n 1)"
           "$BT/apksigner" sign --ks "$KS" --ks-pass "pass:$SECRET_STORE_PASS" \
             --key-pass "pass:$SECRET_KEY_PASS" \
+            --v1-signing-enabled true --v2-signing-enabled true --v3-signing-enabled true \
             --out "$RUNNER_TEMP/PrimeBox-signed.apk" "$RUNNER_TEMP/primebox-unsigned.apk"
           "$BT/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/PrimeBox-signed.apk"
+          ls -la "$RUNNER_TEMP/PrimeBox-signed.apk"
 
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
