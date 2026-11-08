@@ -1791,3 +1791,55 @@ if 'android:statusBarColor">?attr/iconGrayBackground<' in styles:
     )
     STYLES_XML.write_text(styles, encoding="utf-8")
     print("[ui] styles.xml -> status bar uses the app background instead of the grey strip")
+
+PB_CRASH_LOGGER_SOURCE = 'package com.lagradost.cloudstream3.ui.pb\n\nimport android.content.Context\nimport android.os.Build\nimport android.os.Environment\nimport java.io.File\nimport java.io.PrintWriter\nimport java.io.StringWriter\nimport java.text.SimpleDateFormat\nimport java.util.Date\nimport java.util.Locale\n\n/**\n * Writes a heartbeat on every launch and the stack trace of any crash.\n *\n * The top-level /storage/emulated/0/bomb folder needs All files access on Android 11+,\n * so the app asks for it once and always keeps a copy in its own external folder too.\n */\nobject PbCrashLogger {\n    private const val FOLDER = "bomb"\n\n    fun install(context: Context) {\n        val app = context.applicationContext\n        val previous = Thread.getDefaultUncaughtExceptionHandler()\n        Thread.setDefaultUncaughtExceptionHandler { thread, error ->\n            runCatching { write(app, "crash", thread, error) }\n            previous?.uncaughtException(thread, error)\n        }\n        runCatching { write(app, "launch", Thread.currentThread(), null) }\n    }\n\n    fun ensureAccess(activity: android.app.Activity) {\n        if (Build.VERSION.SDK_INT < 30) return\n        val already = runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)\n        if (already) return\n        val prefs = activity.getSharedPreferences("primebox_logs", Context.MODE_PRIVATE)\n        if (prefs.getBoolean("asked", false)) return\n        prefs.edit().putBoolean("asked", true).apply()\n        runCatching {\n            val intent = android.content.Intent(\n                android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,\n                android.net.Uri.parse("package:" + activity.packageName)\n            )\n            activity.startActivity(intent)\n        }\n    }\n\n    fun note(context: Context, tag: String) {\n        runCatching { write(context.applicationContext, tag, Thread.currentThread(), null) }\n    }\n\n    private fun folders(context: Context): List<File> {\n        val list = ArrayList<File>()\n        list.add(File(Environment.getExternalStorageDirectory(), FOLDER))\n        context.getExternalFilesDir(null)?.let { list.add(File(it, FOLDER)) }\n        list.add(File(context.filesDir, FOLDER))\n        return list\n    }\n\n    private fun write(context: Context, tag: String, thread: Thread, error: Throwable?) {\n        val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())\n        val body = buildString {\n            appendLine("time: " + stamp)\n            appendLine("tag: " + tag)\n            appendLine("thread: " + thread.name)\n            appendLine("version: " + com.lagradost.cloudstream3.BuildConfig.VERSION_NAME)\n            appendLine("sdk: " + Build.VERSION.SDK_INT)\n            if (error != null) {\n                val buffer = StringWriter()\n                error.printStackTrace(PrintWriter(buffer))\n                appendLine()\n                append(buffer.toString())\n            }\n        }\n        for (folder in folders(context)) {\n            runCatching {\n                if (!folder.exists()) folder.mkdirs()\n                File(folder, tag + "-" + stamp + ".txt").writeText(body)\n            }\n        }\n    }\n}\n'
+
+# ---------------------------------------------------------------- 22. crash logs in /bomb
+PB_CRASH_KT = ROOT / "app/src/main/java/com/lagradost/cloudstream3/ui/pb/PbCrashLogger.kt"
+PB_CRASH_KT.parent.mkdir(parents=True, exist_ok=True)
+PB_CRASH_KT.write_text(PB_CRASH_LOGGER_SOURCE, encoding="utf-8")
+print("[ui] PbCrashLogger.kt written")
+
+_activity = MAIN_ACTIVITY.read_text(encoding="utf-8")
+_anchor = "        CommonActivity.init(this)\n"
+if "PbCrashLogger" not in _activity and _anchor in _activity:
+    _activity = _activity.replace(
+        _anchor,
+        _anchor
+        + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\n"
+        + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.ensureAccess(this) }\n"
+        + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.note(this, \"pb-activity-created\") }\n",
+        1,
+    )
+    for _call in (
+        "com.lagradost.cloudstream3.ui.pb.PbPreinstalled.seed(this)",
+        "com.lagradost.cloudstream3.ui.pb.PbUpdater.checkAndOffer(this)",
+    ):
+        if "        " + _call + "\n" in _activity:
+            _activity = _activity.replace(
+                "        " + _call + "\n", "        runCatching { " + _call + " }\n", 1
+            )
+    if "        setupFloatingNavBar(navController)\n" in _activity and "runCatching { setupFloatingNavBar" not in _activity:
+        _activity = _activity.replace(
+            "        setupFloatingNavBar(navController)\n",
+            "        runCatching { setupFloatingNavBar(navController) }\n",
+            1,
+        )
+    MAIN_ACTIVITY.write_text(_activity, encoding="utf-8")
+    print("[ui] MainActivity.kt -> crash logger installed")
+
+_manifest = ROOT / "app/src/main/AndroidManifest.xml"
+_mtext = _manifest.read_text(encoding="utf-8")
+if "MANAGE_EXTERNAL_STORAGE" not in _mtext:
+    _perm = ('    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE"\n'
+             '        tools:ignore="ScopedStorage" />\n')
+    if "xmlns:tools" not in _mtext.split("<application")[0]:
+        _mtext = _mtext.replace(
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android"',
+            '<manifest xmlns:android="http://schemas.android.com/apk/res/android"\n'
+            '    xmlns:tools="http://schemas.android.com/tools"',
+            1,
+        )
+    _mtext = _mtext.replace("<application", _perm + "\n    <application", 1)
+    _manifest.write_text(_mtext, encoding="utf-8")
+    print("[ui] AndroidManifest.xml -> all files access declared")
