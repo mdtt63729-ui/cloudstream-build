@@ -60,6 +60,34 @@ jobs:
           print("version ->", "4.8.%d" % run, "code", 48000 + run)
           PYEOF
 
+      - name: Pre-seed the Gradle distribution
+        # services.gradle.org has been answering 504 to Gradle's own client,
+        # so fetch the zip with curl and point the wrapper at the local copy.
+        run: |
+          set -euo pipefail
+          URL=$(grep -o 'https[^ ]*gradle-[0-9.]*-bin.zip' gradle/wrapper/gradle-wrapper.properties | head -n 1)
+          VER=$(echo "$URL" | grep -o 'gradle-[0-9.]*-bin.zip' | sed 's/gradle-//; s/-bin.zip//')
+          MIRROR="https://github.com/gradle/gradle-distributions/releases/download/v${VER}/gradle-${VER}-bin.zip"
+          echo "version: $VER"
+          ok=0
+          for attempt in 1 2 3 4 5 6 7 8; do
+            curl -sL --retry 3 --retry-all-errors --retry-delay 5 -o /tmp/gradle-dist.zip "$MIRROR" || true
+            size=$(stat -c %s /tmp/gradle-dist.zip 2>/dev/null || echo 0)
+            echo "attempt $attempt: $size bytes"
+            if [ "$size" -gt 50000000 ]; then ok=1; break; fi
+            sleep 8
+          done
+          if [ "$ok" != "1" ]; then echo "::error::could not fetch the Gradle distribution"; exit 1; fi
+          python3 - <<'PYEOF'
+          import pathlib, re
+          path = pathlib.Path("gradle/wrapper/gradle-wrapper.properties")
+          text = path.read_text(encoding="utf-8")
+          text = re.sub(r'^distributionUrl=.*$', r'distributionUrl=file\\:/tmp/gradle-dist.zip', text, count=1, flags=re.M)
+          path.write_text(text, encoding="utf-8")
+          print("wrapper now uses the local distribution")
+          PYEOF
+          grep distributionUrl gradle/wrapper/gradle-wrapper.properties
+
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
