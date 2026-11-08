@@ -132,6 +132,23 @@ jobs:
                   runCatching { write(app, "launch", Thread.currentThread(), null) }
               }
 
+              /** Opens the All files access screen once, so the top-level folder can be written. */
+              fun ensureAccess(activity: android.app.Activity) {
+                  if (Build.VERSION.SDK_INT < 30) return
+                  val already = runCatching { Environment.isExternalStorageManager() }.getOrDefault(false)
+                  if (already) return
+                  val prefs = activity.getSharedPreferences("primebox_logs", Context.MODE_PRIVATE)
+                  if (prefs.getBoolean("asked", false)) return
+                  prefs.edit().putBoolean("asked", true).apply()
+                  runCatching {
+                      val intent = android.content.Intent(
+                          android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                          android.net.Uri.parse("package:" + activity.packageName)
+                      )
+                      activity.startActivity(intent)
+                  }
+              }
+
               fun note(context: Context, tag: String) {
                   runCatching { write(context.applicationContext, tag, Thread.currentThread(), null) }
               }
@@ -176,7 +193,9 @@ jobs:
           if "PbCrashLogger" not in text and anchor in text:
               text = text.replace(
                   anchor,
-                  anchor + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\\n",
+                  anchor
+                  + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.install(this) }\\n"
+                  + "        runCatching { com.lagradost.cloudstream3.ui.pb.PbCrashLogger.ensureAccess(this) }\\n",
                   1,
               )
           for call in (
