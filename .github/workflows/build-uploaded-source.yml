@@ -654,6 +654,37 @@ jobs:
               print("orientation pattern not found")
           PYEOF
 
+      - name: Downloads page cleanup and remove Offline
+        working-directory: src
+        run: |
+          python3 <<'PYEOF'
+          import pathlib, re
+          dl = pathlib.Path("app/src/main/res/layout/fragment_downloads.xml")
+          t = dl.read_text(encoding="utf-8")
+          if "download_storage_appbar" in t and "download_storage_appbar_hidden" not in t:
+              t = t.replace('android:id="@+id/download_storage_appbar"', 'android:id="@+id/download_storage_appbar"\n                android:visibility="gone"', 1)
+          def whiten(m):
+              block = m.group(0)
+              if "android:textColor" in block:
+                  return block
+              return block.replace("<TextView", '<TextView\n            android:textColor="#FFFFFF"', 1)
+          t2 = re.sub(r"<TextView\b[^>]*>", whiten, t)
+          dl.write_text(t2, encoding="utf-8")
+          print("fragment_downloads.xml: text forced to white")
+          lib = pathlib.Path("app/src/main/res/layout/fragment_library_home.xml")
+          l = lib.read_text(encoding="utf-8")
+          if "card_offline" in l and "card_offline_hidden" not in l:
+              l = l.replace('android:id="@+id/card_offline"', 'android:id="@+id/card_offline"\n                android:visibility="gone"', 1)
+              lib.write_text(l, encoding="utf-8")
+              print("fragment_library_home.xml: Offline card hidden")
+          frag = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/library/LibraryHomeFragment.kt")
+          f = frag.read_text(encoding="utf-8")
+          if "card_offline" in f:
+              f = f.replace('view.findViewById<View>(R.id.card_offline)?.setOnClickListener {', 'view.findViewById<View>(R.id.card_offline)?.setOnClickListener {\n            return@setOnClickListener', 1)
+              frag.write_text(f, encoding="utf-8")
+              print("LibraryHomeFragment.kt: Offline click disabled")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
