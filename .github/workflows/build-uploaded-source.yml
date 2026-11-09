@@ -442,6 +442,63 @@ jobs:
           settings.write_text(st, encoding="utf-8")
           PYEOF
 
+      - name: Fix colours, the bottom band and the status bar overlap
+        working-directory: src
+        run: |
+          python3 <<'PYEOF'
+          import pathlib
+
+          # 1. FollowSystem used the light scheme on light devices, so text went black on the
+          #    dark Prime Box background. Keep the app on the dark scheme unless picked manually.
+          theme = pathlib.Path("shared/src/commonMain/kotlin/com/lagradost/cloudstream4/theme/Theme.kt")
+          t = theme.read_text(encoding="utf-8")
+          old = "CloudStreamThemeMode.FollowSystem -> if (systemDark) darkScheme() else lightScheme()"
+          new = "CloudStreamThemeMode.FollowSystem -> darkScheme()"
+          if old in t:
+              theme.write_text(t.replace(old, new, 1), encoding="utf-8")
+              print("Theme.kt: FollowSystem resolves to the dark scheme")
+
+          # 2. the settings screen drew its own dark surfaces but inherited light-scheme text
+          sfs = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/settings/SettingsFragmentScreen.kt")
+          st = sfs.read_text(encoding="utf-8")
+          if "statusBarsPadding" not in st:
+              st = st.replace(
+                  "import androidx.compose.foundation.layout.navigationBarsPadding",
+                  "import androidx.compose.foundation.layout.navigationBarsPadding\n"
+                  "import androidx.compose.foundation.layout.statusBarsPadding",
+                  1,
+              )
+              st = st.replace(".navigationBarsPadding()", ".statusBarsPadding()\n                .navigationBarsPadding()", 1)
+              print("SettingsFragmentScreen.kt: status bar padding added")
+          if 'Text(title, style = MaterialTheme.typography.titleMedium)' in st:
+              st = st.replace(
+                  'Text(title, style = MaterialTheme.typography.titleMedium)',
+                  'Text(title, style = MaterialTheme.typography.titleMedium, color = Color.White)',
+                  1,
+              )
+              print("SettingsFragmentScreen.kt: section titles are white")
+          if 'text = "Settings",' in st and 'color = Color.White' not in st.split('text = "Settings",')[1][:200]:
+              st = st.replace(
+                  'text = "Settings",\n                    style = MaterialTheme.typography.titleLarge,',
+                  'text = "Settings",\n                    style = MaterialTheme.typography.titleLarge,\n                    color = Color.White,',
+                  1,
+              )
+              print("SettingsFragmentScreen.kt: top bar title is white")
+          sfs.write_text(st, encoding="utf-8")
+
+          # 3. the floating bar sits on a transparent strip so the content shows behind it
+          layout = pathlib.Path("app/src/main/res/layout/activity_main.xml")
+          lt = layout.read_text(encoding="utf-8")
+          if "pb_nav_bar" in lt and "android:background=\"@android:color/transparent\"" not in lt.split("pb_nav_bar")[1][:400]:
+              lt = lt.replace(
+                  'android:id="@+id/pb_nav_bar"',
+                  'android:id="@+id/pb_nav_bar"\n            android:background="@android:color/transparent"',
+                  1,
+              )
+              layout.write_text(lt, encoding="utf-8")
+              print("activity_main.xml: floating bar strip is transparent")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
