@@ -625,6 +625,24 @@ jobs:
           print("header profile blocks hidden")
           PYEOF
 
+      - name: Open the player in portrait first
+        working-directory: src
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          path = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/player/PlayerView.kt")
+          t = path.read_text(encoding="utf-8")
+          old = "        return if (autoPlayerRotateEnabled && isVerticalOrientation)\n            ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT\n        else ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE"
+          new = "        // Prime Box: start in portrait like YouTube; the fullscreen button switches to landscape.\n        return ActivityInfo.SCREEN_ORIENTATION_SENSOR_PORTRAIT"
+          if old in t:
+              path.write_text(t.replace(old, new, 1), encoding="utf-8")
+              print("PlayerView.kt: player starts in portrait")
+          elif "Prime Box: start in portrait" in t:
+              print("PlayerView.kt: already portrait")
+          else:
+              print("orientation pattern not found")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
