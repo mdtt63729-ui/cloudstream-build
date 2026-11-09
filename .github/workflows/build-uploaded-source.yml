@@ -586,6 +586,45 @@ jobs:
               print("adapter: header item no longer duplicated in the list")
           PYEOF
 
+      - name: Collapse the header on scroll and drop the profile button
+        working-directory: src
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          frag = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/home/HomeFragment.kt")
+          t = frag.read_text(encoding="utf-8")
+          anchor = "            homeSwitchAccount.setOnClickListener {"
+          add = ('            binding.root.findViewById<View>(R.id.pb_fixed_head)?.let { head ->\n'
+                 '                binding.homeMasterRecycler.addOnScrollListener(\n'
+                 '                    object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {\n'
+                 '                        override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {\n'
+                 '                            val offset = rv.computeVerticalScrollOffset().coerceAtLeast(0)\n'
+                 '                            val t = (offset / 220f).coerceIn(0f, 1f)\n'
+                 '                            head.scaleX = 1f - 0.12f * t\n'
+                 '                            head.scaleY = 1f - 0.12f * t\n'
+                 '                            head.translationY = -18f * t\n'
+                 '                            head.alpha = 1f - 0.12f * t\n'
+                 '                        }\n'
+                 '                    }\n'
+                 '                )\n'
+                 '            }\n')
+          if "pb_fixed_head" not in t and anchor in t:
+              t = t.replace(anchor, add + anchor, 1)
+              frag.write_text(t, encoding="utf-8")
+              print("HomeFragment.kt: header collapses as the list scrolls")
+          else:
+              print("HomeFragment.kt: already wired or anchor missing")
+          head = pathlib.Path("app/src/main/res/layout/fragment_home_head.xml")
+          h = head.read_text(encoding="utf-8")
+          for pid in ("home_head_profile_padding", "alternate_home_head_profile_padding"):
+              needle = 'android:id="@+id/' + pid + '"'
+              idx = h.find(needle)
+              if idx != -1 and 'android:visibility' not in h[idx:idx + 400]:
+                  h = h.replace(needle, needle + '\n                android:visibility="gone"', 1)
+          head.write_text(h, encoding="utf-8")
+          print("header profile blocks hidden")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
