@@ -30,6 +30,17 @@ jobs:
           ls -la source.zip
           mkdir -p src
           unzip -q source.zip -d src
+          # some archives carry a single top-level folder; flatten it
+          entries=$(ls -A src | wc -l)
+          if [ "$entries" = "1" ] && [ -d "src/$(ls -A src)" ]; then
+            inner="src/$(ls -A src)"
+            echo "flattening $inner"
+            shopt -s dotglob
+            mv "$inner"/* src/
+            rmdir "$inner"
+            shopt -u dotglob
+          fi
+          test -f src/settings.gradle.kts || { echo "::error::no project at src root"; exit 1; }
           echo "--- project root ---"
           ls src
 
