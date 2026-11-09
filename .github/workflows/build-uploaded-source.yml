@@ -358,6 +358,7 @@ jobs:
               buttons = (
                   '\n        <com.google.android.material.button.MaterialButton\n'
                   '            android:id="@+id/pb_update_action"\n'
+                  '            android:textColor="#111111"\n'
                   '            android:layout_width="match_parent"\n'
                   '            android:layout_height="wrap_content"\n'
                   '            android:layout_marginTop="18dp"\n'
@@ -378,6 +379,14 @@ jobs:
               idx = text.rfind("</LinearLayout>")
               if idx != -1:
                   text = text[:idx] + buttons + text[idx:]
+          if "pb_update_action" in text and 'android:textColor="#111111"' not in text:
+              text = text.replace(
+                  'android:id="@+id/pb_update_action"',
+                  'android:id="@+id/pb_update_action"\n            android:textColor="#111111"',
+                  1,
+              )
+              layout.write_text(text, encoding="utf-8")
+              print("pb_update_dialog.xml: Download label is dark on white")
                   layout.write_text(text, encoding="utf-8")
                   print("pb_update_dialog.xml: action and dismiss buttons restored")
 
