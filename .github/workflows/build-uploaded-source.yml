@@ -401,7 +401,39 @@ jobs:
               )
               print("PrimeBoxSettingsExtraFragments.kt: compose delegate imports added")
 
-          # 4. LocalActivity is an Activity, so the dispatcher needs a ComponentActivity
+          # 4. the settings screen needs the same cast
+          sfs = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/settings/SettingsFragmentScreen.kt")
+          st2 = sfs.read_text(encoding="utf-8")
+          if "activity?.onBackPressedDispatcher" in st2:
+              st2 = st2.replace(
+                  "activity?.onBackPressedDispatcher?.onBackPressed()",
+                  "(activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()",
+              )
+              print("SettingsFragmentScreen.kt: back press cast added")
+
+          # 5. SettingsSearch went missing but two screens still call it
+          if "fun SettingsSearch(" not in st2:
+              helper = (
+                  "\n    @Composable\n"
+                  "    fun SettingsSearch(textState: androidx.compose.foundation.text.input.TextFieldState) {\n"
+                  "        androidx.compose.material3.OutlinedTextField(\n"
+                  "            value = textState.text.toString(),\n"
+                  "            onValueChange = { updated ->\n"
+                  "                textState.edit { replace(0, length, updated) }\n"
+                  "            },\n"
+                  "            modifier = androidx.compose.ui.Modifier.fillMaxWidth(),\n"
+                  "            placeholder = { androidx.compose.material3.Text(\"Search\") },\n"
+                  "            singleLine = true,\n"
+                  "        )\n"
+                  "    }\n"
+              )
+              idx = st2.rstrip().rfind("}")
+              if idx != -1:
+                  st2 = st2[:idx] + helper + st2[idx:]
+                  print("SettingsFragmentScreen.kt: SettingsSearch restored")
+          sfs.write_text(st2, encoding="utf-8")
+
+          # 6. LocalActivity is an Activity, so the dispatcher needs a ComponentActivity
           old_back = "activity?.onBackPressedDispatcher?.onBackPressed()"
           new_back = "(activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()"
           if old_back in st:
