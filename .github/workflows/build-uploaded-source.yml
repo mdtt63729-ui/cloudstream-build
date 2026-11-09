@@ -549,7 +549,8 @@ jobs:
           t = head.read_text(encoding="utf-8")
           for pid in ("home_head_profile_padding", "alternate_home_head_profile_padding"):
               needle = 'android:id="@+id/' + pid + '"'
-              if needle in t and needle + '\n                android:visibility="gone"' not in t:
+              idx = t.find(needle)
+              if idx != -1 and 'android:visibility' not in t[idx:idx + 400]:
                   t = t.replace(needle, needle + '\n                android:visibility="gone"', 1)
           head.write_text(t, encoding="utf-8")
           print("fragment_home_head.xml: header avatar hidden")
