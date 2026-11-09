@@ -499,6 +499,32 @@ jobs:
               print("activity_main.xml: floating bar strip is transparent")
           PYEOF
 
+      - name: Keep downloads inside the app
+        working-directory: src
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib, re
+          path = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/utils/downloader/DownloadFileManagement.kt")
+          text = path.read_text(encoding="utf-8")
+          pattern = re.compile(r"fun getDefaultDir\(context: Context\): SafeFile\? \{.*?\n    \}", re.S)
+          replacement = (
+              "fun getDefaultDir(context: Context): SafeFile? {\n"
+              "        // keep downloads in the app folder; the public MediaStore folder created\n"
+              "        // a new numbered directory for every attempt and never completed\n"
+              "        val dir = java.io.File(context.getExternalFilesDir(null), \"downloads\")\n"
+              "        if (!dir.exists()) dir.mkdirs()\n"
+              "        return SafeFile.fromFile(dir)\n"
+              "    }"
+          )
+          if "getExternalFilesDir(null), \"downloads\"" in text:
+              print("download dir already points inside the app")
+          elif pattern.search(text):
+              path.write_text(pattern.sub(lambda m: replacement, text, count=1), encoding="utf-8")
+              print("DownloadFileManagement.kt: downloads now use the app folder")
+          else:
+              print("getDefaultDir pattern not found")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
