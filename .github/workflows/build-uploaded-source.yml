@@ -513,7 +513,7 @@ jobs:
               "        // a new numbered directory for every attempt and never completed\n"
               "        val dir = java.io.File(context.getExternalFilesDir(null), \"downloads\")\n"
               "        if (!dir.exists()) dir.mkdirs()\n"
-              "        return SafeFile.fromFile(dir)\n"
+              "        return SafeFile.fromFile(context, dir)\n"
               "    }"
           )
           if "getExternalFilesDir(null), \"downloads\"" in text:
