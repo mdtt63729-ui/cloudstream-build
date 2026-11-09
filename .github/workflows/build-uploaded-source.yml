@@ -556,6 +556,36 @@ jobs:
           print("fragment_home_head.xml: header avatar hidden")
           PYEOF
 
+      - name: Pin the search bar and logo to the top
+        working-directory: src
+        run: |
+          python3 - <<'PYEOF'
+          import pathlib
+          home = pathlib.Path("app/src/main/res/layout/fragment_home.xml")
+          t = home.read_text(encoding="utf-8")
+          if "pb_fixed_head" not in t:
+              include = ('\n    <include\n'
+                         '        android:id="@+id/pb_fixed_head"\n'
+                         '        layout="@layout/fragment_home_head"\n'
+                         '        android:layout_width="match_parent"\n'
+                         '        android:layout_height="wrap_content"\n'
+                         '        android:layout_gravity="top" />\n')
+              idx = t.rfind("</FrameLayout>")
+              if idx != -1:
+                  t = t[:idx] + include + t[idx:]
+                  print("fragment_home.xml: header pinned at the top")
+          t = t.replace('android:id="@+id/home_master_recycler"\n        android:layout_width="match_parent"',
+                        'android:id="@+id/home_master_recycler"\n        android:layout_width="match_parent"\n        android:paddingTop="64dp"\n        android:clipToPadding="false"',
+                        1)
+          home.write_text(t, encoding="utf-8")
+          adapter = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/home/HomeParentItemAdapterPreview.kt")
+          a = adapter.read_text(encoding="utf-8")
+          if "override val headers = 1" in a:
+              a = a.replace("override val headers = 1", "override val headers = 0", 1)
+              adapter.write_text(a, encoding="utf-8")
+              print("adapter: header item no longer duplicated in the list")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
