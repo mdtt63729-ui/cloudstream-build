@@ -321,6 +321,30 @@ jobs:
               print("DevicePreferenceStore.kt: app update prompts default to off")
           PYEOF
 
+      - name: Fix duplicate attributes in the archive
+        # activity_main.xml declares android:visibility twice on the BottomNavigationView,
+        # which aapt rejects. Collapse consecutive duplicates so the archive builds.
+        working-directory: src
+        run: |
+          python3 <<'PYEOF'
+          import pathlib, re
+
+          layout = pathlib.Path("app/src/main/res/layout/activity_main.xml")
+          text = layout.read_text(encoding="utf-8")
+          before = text
+          # collapse two identical android:visibility lines that sit back to back
+          text = re.sub(
+              r'(\n[ \t]*android:visibility="[a-z]+")(\n[ \t]*android:visibility="[a-z]+")+',
+              r'\1',
+              text,
+          )
+          if text != before:
+              layout.write_text(text, encoding="utf-8")
+              print("activity_main.xml: duplicate android:visibility removed")
+          else:
+              print("activity_main.xml: nothing to change")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
