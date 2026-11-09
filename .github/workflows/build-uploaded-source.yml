@@ -345,6 +345,60 @@ jobs:
               print("activity_main.xml: nothing to change")
           PYEOF
 
+      - name: Fix the remaining compile errors in this archive
+        working-directory: src
+        run: |
+          python3 <<'PYEOF'
+          import pathlib
+
+          # 1. the sheet layout lost its two buttons, but PbUpdater still looks them up
+          layout = pathlib.Path("app/src/main/res/layout/pb_update_dialog.xml")
+          text = layout.read_text(encoding="utf-8")
+          if "pb_update_action" not in text:
+              buttons = (
+                  '\n        <com.google.android.material.button.MaterialButton\n'
+                  '            android:id="@+id/pb_update_action"\n'
+                  '            android:layout_width="match_parent"\n'
+                  '            android:layout_height="wrap_content"\n'
+                  '            android:layout_marginTop="18dp"\n'
+                  '            android:visibility="gone"\n'
+                  '            android:text="Download"\n'
+                  '            app:backgroundTint="#FFFFFF"\n'
+                  '            app:cornerRadius="24dp" />\n'
+                  '\n        <com.google.android.material.button.MaterialButton\n'
+                  '            android:id="@+id/pb_update_dismiss"\n'
+                  '            android:layout_width="match_parent"\n'
+                  '            android:layout_height="wrap_content"\n'
+                  '            android:layout_marginTop="8dp"\n'
+                  '            android:visibility="gone"\n'
+                  '            android:text="Maybe later"\n'
+                  '            app:backgroundTint="#2A2624"\n'
+                  '            app:cornerRadius="24dp" />\n'
+              )
+              idx = text.rfind("</LinearLayout>")
+              if idx != -1:
+                  text = text[:idx] + buttons + text[idx:]
+                  layout.write_text(text, encoding="utf-8")
+                  print("pb_update_dialog.xml: action and dismiss buttons restored")
+
+          # 2. the backup path is nullable, so ifBlank cannot be called on it directly
+          settings = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/settings/PrimeBoxSettingsExtraFragments.kt")
+          st = settings.read_text(encoding="utf-8")
+          old_path = 'SettingText("Backup location", path.ifBlank { "Default app backup location" })'
+          new_path = 'SettingText("Backup location", (path ?: "").ifBlank { "Default app backup location" })'
+          if old_path in st:
+              st = st.replace(old_path, new_path, 1)
+              print("PrimeBoxSettingsExtraFragments.kt: nullable backup path fixed")
+
+          # 3. LocalActivity is an Activity, so the dispatcher needs a ComponentActivity
+          old_back = "activity?.onBackPressedDispatcher?.onBackPressed()"
+          new_back = "(activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()"
+          if old_back in st:
+              st = st.replace(old_back, new_back, 1)
+              print("PrimeBoxSettingsExtraFragments.kt: back press cast added")
+          settings.write_text(st, encoding="utf-8")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
