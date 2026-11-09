@@ -379,16 +379,16 @@ jobs:
               idx = text.rfind("</LinearLayout>")
               if idx != -1:
                   text = text[:idx] + buttons + text[idx:]
-          if "pb_update_action" in text and 'android:textColor="#111111"' not in text:
+              layout.write_text(text, encoding="utf-8")
+              print("pb_update_dialog.xml: action and dismiss buttons restored")
+          elif 'android:textColor="#111111"' not in text:
               text = text.replace(
-                  'android:id="@+id/pb_update_action"',
-                  'android:id="@+id/pb_update_action"\n            android:textColor="#111111"',
+                  'android:id="@+id/pb_update_action"\n',
+                  'android:id="@+id/pb_update_action"\n            android:textColor="#111111"\n',
                   1,
               )
               layout.write_text(text, encoding="utf-8")
               print("pb_update_dialog.xml: Download label is dark on white")
-                  layout.write_text(text, encoding="utf-8")
-                  print("pb_update_dialog.xml: action and dismiss buttons restored")
 
           # 2. the backup path is nullable, so ifBlank cannot be called on it directly
           settings = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/settings/PrimeBoxSettingsExtraFragments.kt")
