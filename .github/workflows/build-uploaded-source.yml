@@ -699,6 +699,24 @@ jobs:
           "$BT/apksigner" verify --verbose --print-certs "$RUNNER_TEMP/PrimeBox-signed.apk"
           ls -la "$RUNNER_TEMP/PrimeBox-signed.apk"
 
+      - name: Package the patched source
+        # Ships the exact tree that produced this APK, so the next build starts from it.
+        run: |
+          set -euo pipefail
+          cd src
+          rm -rf .git
+          cd ..
+          zip -qr "$RUNNER_TEMP/PrimeBox-source.zip" src -x "*/build/*" -x "*/.gradle/*"
+          ls -la "$RUNNER_TEMP/PrimeBox-source.zip"
+
+      - name: Upload patched source
+        uses: actions/upload-artifact@v4
+        with:
+          name: PrimeBox-source
+          path: ${{ runner.temp }}/PrimeBox-source.zip
+          if-no-files-found: error
+          retention-days: 14
+
       - name: Upload signed APK
         uses: actions/upload-artifact@v4
         with:
