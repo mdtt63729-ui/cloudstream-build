@@ -390,7 +390,18 @@ jobs:
               st = st.replace(old_path, new_path, 1)
               print("PrimeBoxSettingsExtraFragments.kt: nullable backup path fixed")
 
-          # 3. LocalActivity is an Activity, so the dispatcher needs a ComponentActivity
+          # 3. the file uses `by` delegation but never imports the delegates
+          if "import androidx.compose.runtime.getValue" not in st:
+              st = st.replace(
+                  "import androidx.compose.runtime.Composable",
+                  "import androidx.compose.runtime.Composable\n"
+                  "import androidx.compose.runtime.getValue\n"
+                  "import androidx.compose.runtime.setValue",
+                  1,
+              )
+              print("PrimeBoxSettingsExtraFragments.kt: compose delegate imports added")
+
+          # 4. LocalActivity is an Activity, so the dispatcher needs a ComponentActivity
           old_back = "activity?.onBackPressedDispatcher?.onBackPressed()"
           new_back = "(activity as? androidx.activity.ComponentActivity)?.onBackPressedDispatcher?.onBackPressed()"
           if old_back in st:
