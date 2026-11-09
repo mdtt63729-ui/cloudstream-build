@@ -383,7 +383,7 @@ jobs:
 
           # 2. the backup path is nullable, so ifBlank cannot be called on it directly
           settings = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/settings/PrimeBoxSettingsExtraFragments.kt")
-          st = settings.read_text(encoding="utf-8")
+          st = settings.read_text(encoding="utf-8") if settings.exists() else ""
           old_path = 'SettingText("Backup location", path.ifBlank { "Default app backup location" })'
           new_path = 'SettingText("Backup location", (path ?: "").ifBlank { "Default app backup location" })'
           if old_path in st:
@@ -403,7 +403,7 @@ jobs:
 
           # 4. the settings screen needs the same cast
           sfs = pathlib.Path("app/src/main/java/com/lagradost/cloudstream3/ui/settings/SettingsFragmentScreen.kt")
-          st2 = sfs.read_text(encoding="utf-8")
+          st2 = sfs.read_text(encoding="utf-8") if sfs.exists() else ""
           if "activity?.onBackPressedDispatcher" in st2:
               st2 = st2.replace(
                   "activity?.onBackPressedDispatcher?.onBackPressed()",
@@ -431,7 +431,8 @@ jobs:
               if idx != -1:
                   st2 = st2[:idx] + helper + st2[idx:]
                   print("SettingsFragmentScreen.kt: SettingsSearch restored")
-          sfs.write_text(st2, encoding="utf-8")
+          if st2:
+              sfs.write_text(st2, encoding="utf-8")
 
           # 6. LocalActivity is an Activity, so the dispatcher needs a ComponentActivity
           old_back = "activity?.onBackPressedDispatcher?.onBackPressed()"
@@ -439,7 +440,8 @@ jobs:
           if old_back in st:
               st = st.replace(old_back, new_back, 1)
               print("PrimeBoxSettingsExtraFragments.kt: back press cast added")
-          settings.write_text(st, encoding="utf-8")
+          if st:
+              settings.write_text(st, encoding="utf-8")
           PYEOF
 
       - name: Fix colours, the bottom band and the status bar overlap
@@ -595,8 +597,6 @@ jobs:
           t = frag.read_text(encoding="utf-8")
           anchor = "            homeSwitchAccount.setOnClickListener {"
           add = ('            binding.root.findViewById<View>(R.id.pb_fixed_head)?.let { head ->\n'
-                 '                val sbId = resources.getIdentifier("status_bar_height", "dimen", "android")\n'
-                 '                if (sbId > 0) head.setPadding(0, resources.getDimensionPixelSize(sbId), 0, 0)\n'
                  '                binding.homeMasterRecycler.addOnScrollListener(\n'
                  '                    object : androidx.recyclerview.widget.RecyclerView.OnScrollListener() {\n'
                  '                        override fun onScrolled(rv: androidx.recyclerview.widget.RecyclerView, dx: Int, dy: Int) {\n'
