@@ -525,6 +525,36 @@ jobs:
               print("getDefaultDir pattern not found")
           PYEOF
 
+      - name: Transparent logo and no header avatar
+        working-directory: src
+        run: |
+          pip install --quiet pillow
+          python3 - <<'PYEOF'
+          import pathlib
+          from PIL import Image
+          logo = pathlib.Path("app/src/main/res/drawable/pb_logo.png")
+          im = Image.open(logo).convert("RGBA")
+          px = im.load()
+          w, h = im.size
+          changed = 0
+          for y in range(h):
+              for x in range(w):
+                  r, g, b, a = px[x, y]
+                  if a > 0 and r < 40 and g < 40 and b < 40:
+                      px[x, y] = (r, g, b, 0)
+                      changed += 1
+          im.save(logo)
+          print("pb_logo.png: cleared", changed, "black pixels")
+          head = pathlib.Path("app/src/main/res/layout/fragment_home_head.xml")
+          t = head.read_text(encoding="utf-8")
+          for pid in ("home_head_profile_padding", "alternate_home_head_profile_padding"):
+              needle = 'android:id="@+id/' + pid + '"'
+              if needle in t and needle + '\n                android:visibility="gone"' not in t:
+                  t = t.replace(needle, needle + '\n                android:visibility="gone"', 1)
+          head.write_text(t, encoding="utf-8")
+          print("fragment_home_head.xml: header avatar hidden")
+          PYEOF
+
       - name: Bump version
         working-directory: src
         run: |
