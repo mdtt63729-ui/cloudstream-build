@@ -662,7 +662,9 @@ jobs:
           dl = pathlib.Path("app/src/main/res/layout/fragment_downloads.xml")
           t = dl.read_text(encoding="utf-8")
           if "download_storage_appbar" in t and "download_storage_appbar_hidden" not in t:
-              t = t.replace('android:id="@+id/download_storage_appbar"', 'android:id="@+id/download_storage_appbar"\n                android:visibility="gone"', 1)
+              idx = t.find('android:id="@+id/download_storage_appbar"')
+              if idx != -1 and 'android:visibility' not in t[idx:idx + 400]:
+                  t = t.replace('android:id="@+id/download_storage_appbar"', 'android:id="@+id/download_storage_appbar"\n                android:visibility="gone"', 1)
           def whiten(m):
               block = m.group(0)
               if "android:textColor" in block:
